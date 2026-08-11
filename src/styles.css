@@ -75,6 +75,8 @@ section > .hint {
 .error {
   color: var(--danger);
   font-size: 0.85rem;
+  /* エラー本文にURLが入るため、狭い画面でも折り返す */
+  overflow-wrap: anywhere;
 }
 
 .banner {
@@ -482,5 +484,30 @@ textarea {
 
   .card-media img {
     height: 180px;
+  }
+}
+
+/* スマホ・タブレット: 指で押せる大きさを確保する */
+@media (pointer: coarse) {
+  button {
+    min-height: 40px;
+    padding: 0.45rem 0.9rem;
+  }
+
+  button.ghost {
+    min-height: 36px;
+    padding: 0.3rem 0.6rem;
+  }
+
+  .segmented button {
+    min-height: 40px;
+  }
+
+  input[type='text'],
+  input[type='datetime-local'],
+  select,
+  textarea {
+    /* iOSで入力時に画面が拡大されるのを防ぐ */
+    font-size: 16px;
   }
 }
