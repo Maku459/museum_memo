@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+# npm run vendor:tesseract で配置される実行ファイル・言語データ
+public/tesseract/
+public/tessdata/
+
+# tsc -b の中間ファイル
+tsconfig.tsbuildinfo
