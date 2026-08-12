@@ -229,6 +229,11 @@ button.danger:hover {
   font-weight: 600;
 }
 
+/* APIキーは長いので1行使う */
+.settings-grid .wide {
+  grid-column: 1 / -1;
+}
+
 .settings-grid fieldset {
   border: 1px solid var(--line);
   border-radius: 6px;

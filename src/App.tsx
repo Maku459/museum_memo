@@ -3,19 +3,12 @@ import PhotoCard from './components/PhotoCard';
 import SettingsPanel from './components/SettingsPanel';
 import OutlinePanel from './components/OutlinePanel';
 import { readImageMeta } from './lib/image';
-import { ENGINE_ERROR_PREFIX, prepareForOcr, recognize } from './lib/ocr';
-import { buildSections, classifyPhoto } from './lib/group';
+import { loadApiKey, recognize, saveApiKey } from './lib/vision';
+import { buildSections } from './lib/group';
 import { buildMarkdown, forgetDataUrl } from './lib/markdown';
 import { copyToClipboard, downloadMarkdown, downloadZip } from './lib/download';
 import { sanitizeFileName } from './lib/text';
-import {
-  defaultBuildOptions,
-  effectiveConfidence,
-  kindOf,
-  type BuildOptions,
-  type Photo,
-  type PhotoKind,
-} from './types';
+import { defaultBuildOptions, type BuildOptions, type Photo, type PhotoKind } from './types';
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|tiff?|avif|heic|heif)$/i;
 
@@ -45,6 +38,7 @@ function byTime(a: Photo, b: Photo): number {
 export default function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [options, setOptions] = useState<BuildOptions>(defaultBuildOptions);
+  const [apiKey, setApiKey] = useState<string>(() => loadApiKey());
   const [markdown, setMarkdown] = useState('');
   const [building, setBuilding] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -52,95 +46,95 @@ export default function App() {
 
   const photosRef = useRef<Photo[]>(photos);
   photosRef.current = photos;
-  const optionsRef = useRef<BuildOptions>(options);
-  optionsRef.current = options;
+  const apiKeyRef = useRef(apiKey);
+  apiKeyRef.current = apiKey;
 
   const patchPhoto = useCallback((id: string, patch: Partial<Photo>) => {
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }, []);
 
-  /** 追加直後の写真はまだstateに反映されていないので、Photoそのものを受け取る。 */
+  /** 解説文として選ばれた写真だけをVision APIに送る。 */
   const runOcr = useCallback(
     async (target: Photo) => {
+      const key = apiKeyRef.current;
+      if (!key) {
+        setNotice('先にVision APIのキーを設定してください（「まとめ方の設定」の中にあります）。');
+        return;
+      }
       const { id } = target;
-      patchPhoto(id, { status: 'reading', progress: 0, error: undefined });
+      patchPhoto(id, { status: 'reading', error: undefined });
       try {
-        const image = await prepareForOcr(target.file);
-        const result = await recognize(image, (progress, status) => {
-          if (status === 'recognizing text') patchPhoto(id, { progress });
-        });
+        const result = await recognize(target.file, key);
         setPhotos((prev) =>
           prev.map((p) =>
             p.id === id
               ? {
                   ...p,
                   status: 'done',
-                  progress: 1,
                   text: result.text,
                   confidence: result.confidence,
                   edited: false,
-                  autoKind: classifyPhoto(
-                    result.text,
-                    result.confidence,
-                    optionsRef.current.captionMinChars,
-                  ),
                 }
               : p,
           ),
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        // エンジンの準備に失敗した場合は全写真で同じ内容になるので、画面上部にまとめて出す
-        if (message.startsWith(ENGINE_ERROR_PREFIX)) {
-          setNotice(message);
-          patchPhoto(id, { status: 'error', error: 'この写真はOCRできませんでした。' });
-        } else {
-          patchPhoto(id, { status: 'error', error: message });
-        }
+        setNotice(message);
+        patchPhoto(id, { status: 'error', error: message });
       }
     },
     [patchPhoto],
   );
 
-  const addFiles = useCallback(
-    async (fileList: FileList | File[]) => {
-      const files = Array.from(fileList).filter(
-        (f) => f.type.startsWith('image/') || IMAGE_EXT.test(f.name),
-      );
-      if (files.length === 0) {
-        setNotice('画像ファイルが見つかりませんでした。');
-        return;
-      }
-      setNotice('');
+  const addFiles = useCallback(async (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter(
+      (f) => f.type.startsWith('image/') || IMAGE_EXT.test(f.name),
+    );
+    if (files.length === 0) {
+      setNotice('画像ファイルが見つかりませんでした。');
+      return;
+    }
+    setNotice('');
 
-      const taken = new Set(photosRef.current.map((p) => p.exportName));
-      const created: Photo[] = [];
-      for (const file of files) {
-        const meta = await readImageMeta(file);
-        const exportName = uniqueExportName(file.name, taken);
-        taken.add(exportName);
-        created.push({
-          id: nextId(),
-          file,
-          url: URL.createObjectURL(file),
-          exportName,
-          takenAt: meta.takenAt,
-          takenAtFromExif: meta.takenAtFromExif,
-          width: meta.width,
-          height: meta.height,
-          status: 'pending',
-          progress: 0,
-          text: '',
-          confidence: 0,
-          edited: false,
-          autoKind: 'exhibit',
-        });
-      }
+    const taken = new Set(photosRef.current.map((p) => p.exportName));
+    const created: Photo[] = [];
+    for (const file of files) {
+      const meta = await readImageMeta(file);
+      const exportName = uniqueExportName(file.name, taken);
+      taken.add(exportName);
+      created.push({
+        id: nextId(),
+        file,
+        url: URL.createObjectURL(file),
+        exportName,
+        takenAt: meta.takenAt,
+        takenAtFromExif: meta.takenAtFromExif,
+        width: meta.width,
+        height: meta.height,
+        // 取り込んだ時点では展示物。解説パネルは利用者が選ぶ。
+        kind: 'exhibit',
+        status: 'idle',
+        text: '',
+        confidence: 0,
+        edited: false,
+      });
+    }
 
-      setPhotos((prev) => [...prev, ...created].sort(byTime));
-      for (const photo of created) void runOcr(photo);
+    setPhotos((prev) => [...prev, ...created].sort(byTime));
+  }, []);
+
+  /** 種別の切り替え。解説文にしたら、まだ読んでいなければそのまま読み取る。 */
+  const changeKind = useCallback(
+    (id: string, kind: PhotoKind) => {
+      const target = photosRef.current.find((p) => p.id === id);
+      if (!target || target.kind === kind) return;
+      patchPhoto(id, { kind });
+      if (kind === 'caption' && target.status === 'idle' && !target.text) {
+        void runOcr({ ...target, kind });
+      }
     },
-    [runOcr],
+    [patchPhoto, runOcr],
   );
 
   const retryOcr = useCallback(
@@ -150,6 +144,16 @@ export default function App() {
     },
     [runOcr],
   );
+
+  /** 解説文にしたのに未読のものをまとめて読み取る。 */
+  const readAllCaptions = useCallback(async () => {
+    const pending = photosRef.current.filter(
+      (p) => p.kind === 'caption' && p.status !== 'done' && p.status !== 'reading',
+    );
+    for (const photo of pending) {
+      await runOcr(photo);
+    }
+  }, [runOcr]);
 
   const removePhoto = useCallback((id: string) => {
     setPhotos((prev) => {
@@ -171,23 +175,9 @@ export default function App() {
     setMarkdown('');
   }, []);
 
-  const changeKind = useCallback(
-    (id: string, kind: PhotoKind | undefined) => patchPhoto(id, { manualKind: kind }),
-    [patchPhoto],
-  );
-
   const changeText = useCallback((id: string, text: string) => {
     setPhotos((prev) =>
-      prev.map((p) =>
-        p.id === id
-          ? {
-              ...p,
-              text,
-              edited: true,
-              autoKind: classifyPhoto(text, 100, optionsRef.current.captionMinChars),
-            }
-          : p,
-      ),
+      prev.map((p) => (p.id === id ? { ...p, text, edited: true } : p)),
     );
   }, []);
 
@@ -201,23 +191,18 @@ export default function App() {
     setOptions((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  // 判定のしきい値を動かしたら、読み取り済みの写真を再判定する
-  useEffect(() => {
-    setPhotos((prev) =>
-      prev.map((p) =>
-        p.status === 'done' || p.edited
-          ? {
-              ...p,
-              autoKind: classifyPhoto(p.text, effectiveConfidence(p), options.captionMinChars),
-            }
-          : p,
-      ),
-    );
-  }, [options.captionMinChars]);
+  const updateApiKey = useCallback((key: string) => {
+    setApiKey(key);
+    saveApiKey(key);
+  }, []);
 
   const sections = useMemo(() => buildSections(photos, options), [photos, options]);
 
-  const readingCount = photos.filter((p) => p.status === 'pending' || p.status === 'reading').length;
+  const captionCount = photos.filter((p) => p.kind === 'caption').length;
+  const readingCount = photos.filter((p) => p.status === 'reading').length;
+  const unreadCount = photos.filter(
+    (p) => p.kind === 'caption' && p.status !== 'done' && p.status !== 'reading' && !p.text,
+  ).length;
 
   // Markdownは入力が変わるたびに組み直す。連続入力で走りすぎないよう少し待つ。
   useEffect(() => {
@@ -253,16 +238,15 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
-  const captionCount = photos.filter((p) => kindOf(p) === 'caption').length;
-
   return (
     <div className="app">
       <header className="app-head">
         <h1>博物館メモ</h1>
         <p>
-          展示物と解説文の写真をまとめてアップロードすると、解説文をOCRで読み取り、
-          撮影時刻を手がかりに展示物の写真を並べたMarkdownの見学メモを作ります。
-          画像もOCRもブラウザ内で処理するので、写真はどこにも送信されません。
+          展示物と解説文の写真をまとめてアップロードし、解説パネルの写真を選ぶと、
+          その文字をGoogle Cloud Visionで読み取って、撮影時刻の近い展示物写真を並べた
+          Markdownの見学メモを作ります。Googleに送られるのは<strong>解説文に指定した写真だけ</strong>で、
+          展示物の写真はブラウザから出ません。
         </p>
       </header>
 
@@ -290,11 +274,19 @@ export default function App() {
         />
         <span className="dropzone-main">写真をドロップ、またはクリックして選ぶ</span>
         <span className="hint">
-          解説パネルの写真と展示物の写真を、まとめて選んで構いません。撮影時刻で自動的に並べます。
+          展示物も解説パネルも、まとめて選んで構いません。撮影時刻で自動的に並べます。
         </span>
       </label>
 
       {notice && <p className="error banner">{notice}</p>}
+
+      {/* 写真を入れる前にAPIキーを設定できるよう、常に出しておく */}
+      <SettingsPanel
+        options={options}
+        onChange={updateOptions}
+        apiKey={apiKey}
+        onChangeApiKey={updateApiKey}
+      />
 
       {photos.length > 0 && (
         <>
@@ -303,18 +295,21 @@ export default function App() {
               {photos.length}枚（解説文 {captionCount} / 展示物 {photos.length - captionCount}）・
               {sections.length}項目
             </span>
-            {readingCount > 0 && <span className="reading">OCR中… 残り{readingCount}枚</span>}
+            {readingCount > 0 && <span className="reading">読み取り中… {readingCount}枚</span>}
+            {unreadCount > 0 && readingCount === 0 && (
+              <button type="button" onClick={() => void readAllCaptions()}>
+                未読の解説文 {unreadCount}枚を読み取る
+              </button>
+            )}
             <button type="button" className="ghost danger" onClick={clearAll}>
               すべて消す
             </button>
           </div>
 
-          <SettingsPanel options={options} onChange={updateOptions} />
-
           <section>
             <h2>写真（{photos.length}枚）</h2>
             <p className="hint">
-              種別の判定を間違えていたら切り替えてください。OCRの誤字はその場で直せます。
+              解説パネルの写真を「解説文」に切り替えてください。切り替えた写真だけを読み取ります。
             </p>
             <ul className="cards">
               {photos.map((photo, index) => (
@@ -381,7 +376,8 @@ export default function App() {
 
       <footer className="app-foot">
         <p className="hint">
-          OCRはtesseract.js（日本語＋英語）を使用しています。初回は言語データの読み込みに少し時間がかかります。
+          文字の読み取りにはGoogle Cloud Vision API（DOCUMENT_TEXT_DETECTION）を使います。
+          APIキーはこのブラウザにのみ保存され、送信先はGoogleだけです。
           HEICなど一部の形式はブラウザが表示できないことがあるため、JPEGやPNGでの取り込みをおすすめします。
         </p>
       </footer>
