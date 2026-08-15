@@ -1,17 +1,5 @@
-import { kindOf, type BuildOptions, type Photo, type PhotoKind, type Section } from '../types';
-import { deriveTitle, meaningfulCharCount } from './text';
-
-/**
- * 解説文のパネルか、展示物そのものかを文字量で判定する。
- * 展示物の写真にもキャプションの端が写り込むことがあるので、
- * 読み取れた文字が少ないもの・信頼度が低くて短いものは展示物とみなす。
- */
-export function classifyPhoto(text: string, confidence: number, minChars: number): PhotoKind {
-  const chars = meaningfulCharCount(text);
-  if (chars < minChars) return 'exhibit';
-  if (confidence < 35 && chars < minChars * 2) return 'exhibit';
-  return 'caption';
-}
+import type { BuildOptions, Photo, Section } from '../types';
+import { deriveTitle } from './text';
 
 function byTime(a: Photo, b: Photo): number {
   return a.takenAt.getTime() - b.takenAt.getTime();
@@ -23,8 +11,8 @@ function byTime(a: Photo, b: Photo): number {
  */
 export function buildSections(photos: Photo[], opts: BuildOptions): Section[] {
   const sorted = [...photos].sort(byTime);
-  const captions = sorted.filter((p) => kindOf(p) === 'caption');
-  const exhibits = sorted.filter((p) => kindOf(p) === 'exhibit');
+  const captions = sorted.filter((p) => p.kind === 'caption');
+  const exhibits = sorted.filter((p) => p.kind === 'exhibit');
   const gapMs = Math.max(0, opts.groupGapMinutes) * 60_000;
 
   const before = new Map<string, Photo[]>();
@@ -88,8 +76,4 @@ export function buildSections(photos: Photo[], opts: BuildOptions): Section[] {
   flush();
 
   return sections.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
-}
-
-export function sectionPhotos(section: Section): Photo[] {
-  return [...section.before, ...(section.caption ? [section.caption] : []), ...section.after];
 }

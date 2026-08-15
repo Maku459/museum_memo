@@ -3,14 +3,33 @@ import type { BuildOptions } from '../types';
 interface Props {
   options: BuildOptions;
   onChange: (patch: Partial<BuildOptions>) => void;
+  apiKey: string;
+  onChangeApiKey: (key: string) => void;
 }
 
-export default function SettingsPanel({ options, onChange }: Props) {
+export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKey }: Props) {
   return (
-    <details className="settings">
-      <summary>まとめ方の設定</summary>
+    <details className="settings" open={!apiKey}>
+      <summary>まとめ方の設定{apiKey ? '' : '（APIキーの設定が必要です）'}</summary>
 
       <div className="settings-grid">
+        <label className="wide">
+          Google Cloud Vision APIキー
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="AIza..."
+            value={apiKey}
+            onChange={(e) => onChangeApiKey(e.target.value.trim())}
+          />
+          <span className="hint">
+            このブラウザにのみ保存されます（サーバーには送りません）。Google Cloudでキーを作り、
+            <strong>Cloud Vision APIだけに制限</strong>し、
+            <strong>ウェブサイト制限にこのページのURL</strong>を登録しておくと安全です。
+          </span>
+        </label>
+
         <label>
           メモのタイトル
           <input
@@ -34,24 +53,6 @@ export default function SettingsPanel({ options, onChange }: Props) {
           </span>
           <span className="hint">
             解説文の写真からこの時間内に撮った展示物写真を、同じ項目にまとめます。
-          </span>
-        </label>
-
-        <label>
-          解説文とみなす文字数
-          <span className="range-row">
-            <input
-              type="range"
-              min={5}
-              max={120}
-              step={5}
-              value={options.captionMinChars}
-              onChange={(e) => onChange({ captionMinChars: Number(e.target.value) })}
-            />
-            <output>{options.captionMinChars}字</output>
-          </span>
-          <span className="hint">
-            これ以上の文字が読み取れた写真を解説パネルと判定します。個別に上書きもできます。
           </span>
         </label>
 
@@ -98,7 +99,7 @@ export default function SettingsPanel({ options, onChange }: Props) {
               checked={options.includeOcrNotes}
               onChange={(e) => onChange({ includeOcrNotes: e.target.checked })}
             />
-            OCRの補足情報と写真一覧
+            読み取りの補足情報と写真一覧
           </label>
           <label className="check">
             <input

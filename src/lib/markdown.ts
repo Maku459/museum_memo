@@ -1,4 +1,4 @@
-import { kindOf, type BuildOptions, type Photo, type Section } from '../types';
+import type { BuildOptions, Photo, Section } from '../types';
 import { toDataUrl } from './image';
 import {
   escapeMarkdownBlock,
@@ -36,11 +36,13 @@ export function forgetDataUrl(photoId: string): void {
   dataUrlCache.delete(photoId);
 }
 
-/** 本文がOCR由来か手入力かを示す補足。信頼度はOCRしたときだけ意味がある。 */
+/** 本文が読み取り由来か手入力かを示す補足。信頼度は読み取ったときだけ意味がある。 */
 function sourceNote(photo: Photo): string {
   if (photo.status !== 'done') return `手入力: ${photo.exportName}`;
-  const detail = photo.edited ? `信頼度 ${photo.confidence}% / 手直しあり` : `信頼度 ${photo.confidence}%`;
-  return `OCR: ${photo.exportName}（${detail}）`;
+  const detail = photo.edited
+    ? `信頼度 ${photo.confidence}% / 手直しあり`
+    : `信頼度 ${photo.confidence}%`;
+  return `読み取り: ${photo.exportName}（${detail}）`;
 }
 
 function imageBlock(photo: Photo, alt: string, src: string, opts: BuildOptions): string {
@@ -76,7 +78,7 @@ export async function buildMarkdown(
       formatDate(first) === formatDate(last)
         ? formatDate(first)
         : `${formatDate(first)} 〜 ${formatDate(last)}`;
-    const captionCount = photos.filter((p) => kindOf(p) === 'caption').length;
+    const captionCount = photos.filter((p) => p.kind === 'caption').length;
     const meta = [
       `- 訪問日: ${day}（${formatTime(first)}〜${formatTime(last)}）`,
       `- 写真: ${photos.length}枚（解説文 ${captionCount}枚 / 展示物 ${
@@ -89,7 +91,7 @@ export async function buildMarkdown(
 
   if (opts.includeOcrNotes) {
     blocks.push(
-      '> 解説文はOCRで自動的に読み取ったものです。誤読が残っている場合があります。',
+      '> 解説文はCloud Vision APIで読み取ったものです。誤読が残っている場合があります。',
     );
   }
 
@@ -133,7 +135,7 @@ export async function buildMarkdown(
     blocks.push('## 付録: 写真一覧');
     const rows = sorted.map((photo) => {
       const time = `${formatDateTime(photo.takenAt)}${photo.takenAtFromExif ? '' : '（推定）'}`;
-      const kind = kindOf(photo) === 'caption' ? '解説文' : '展示物';
+      const kind = photo.kind === 'caption' ? '解説文' : '展示物';
       return `| ${photo.exportName} | ${time} | ${kind} |`;
     });
     blocks.push(['| ファイル | 撮影日時 | 種別 |', '| --- | --- | --- |', ...rows].join('\n'));

@@ -1,7 +1,8 @@
 /** 写真1枚の種別。caption = 解説文のパネル、exhibit = 展示物そのもの。 */
 export type PhotoKind = 'caption' | 'exhibit';
 
-export type PhotoStatus = 'pending' | 'reading' | 'done' | 'error';
+/** idle = 読み取っていない（展示物はここで止まる）。 */
+export type PhotoStatus = 'idle' | 'reading' | 'done' | 'error';
 
 export interface Photo {
   id: string;
@@ -16,19 +17,15 @@ export interface Photo {
   takenAtFromExif: boolean;
   width: number;
   height: number;
+  /** 展示物か解説文か。取り込み時は展示物で、利用者が解説文に切り替える。 */
+  kind: PhotoKind;
   status: PhotoStatus;
-  /** OCRの進捗 0-1 */
-  progress: number;
-  /** OCRで読み取った全文（整形済み） */
+  /** 読み取った全文（整形済み） */
   text: string;
-  /** OCRの平均信頼度 0-100 */
+  /** Visionの信頼度 0-100 */
   confidence: number;
-  /** 本文を手で直したか。直した文には信頼度の低さを理由にした判定を効かせない。 */
+  /** 本文を手で直した／手入力したか */
   edited: boolean;
-  /** 自動判定された種別 */
-  autoKind: PhotoKind;
-  /** ユーザーが手動で上書きした種別。未指定ならautoKindを使う。 */
-  manualKind?: PhotoKind;
   error?: string;
 }
 
@@ -52,8 +49,6 @@ export interface BuildOptions {
   title: string;
   /** 展示物写真を解説文に紐づける最大の時間差（分） */
   groupGapMinutes: number;
-  /** これ以上の文字数がOCRで取れたら解説文とみなす */
-  captionMinChars: number;
   /** 画像の埋め込み方式 */
   imageMode: 'files' | 'dataurl';
   /** 画像を入れるフォルダ名（imageMode === 'files' のとき） */
@@ -62,26 +57,16 @@ export interface BuildOptions {
   includeTimestamps: boolean;
   /** OCRの信頼度など、読み取りの補足情報を書き出すか */
   includeOcrNotes: boolean;
-  /** 解説文の写真そのものもMarkdownに載せるか（OCRの答え合わせ用） */
+  /** 解説文の写真そのものもMarkdownに載せるか（読み取りの答え合わせ用） */
   includeCaptionPhotos: boolean;
 }
 
 export const defaultBuildOptions: BuildOptions = {
   title: '博物館 見学メモ',
   groupGapMinutes: 5,
-  captionMinChars: 30,
   imageMode: 'files',
   imageDir: 'images',
   includeTimestamps: true,
   includeOcrNotes: true,
   includeCaptionPhotos: false,
 };
-
-export function kindOf(photo: Photo): PhotoKind {
-  return photo.manualKind ?? photo.autoKind;
-}
-
-/** 自動判定に使う信頼度。手入力・手直しした本文は信頼できるものとして扱う。 */
-export function effectiveConfidence(photo: Pick<Photo, 'confidence' | 'edited'>): number {
-  return photo.edited ? 100 : photo.confidence;
-}
