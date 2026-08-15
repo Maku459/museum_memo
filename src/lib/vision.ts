@@ -50,13 +50,96 @@ async function toBase64Jpeg(file: File, maxEdge = 1800, quality = 0.85): Promise
   return canvas.toDataURL('image/jpeg', quality).split(',')[1] ?? '';
 }
 
+type BreakType = 'SPACE' | 'SURE_SPACE' | 'EOL_SURE_SPACE' | 'LINE_BREAK' | 'HYPHEN' | 'UNKNOWN';
+
+interface VisionSymbol {
+  text?: string;
+  property?: { detectedBreak?: { type?: BreakType } };
+}
+
+interface VisionParagraph {
+  words?: { symbols?: VisionSymbol[] }[];
+}
+
+interface VisionBlock {
+  paragraphs?: VisionParagraph[];
+}
+
 interface VisionPage {
   confidence?: number;
+  blocks?: VisionBlock[];
+}
+
+interface VisionAnnotation {
+  text?: string;
+  pages?: VisionPage[];
 }
 
 interface VisionResponse {
-  fullTextAnnotation?: { text?: string; pages?: VisionPage[] };
+  fullTextAnnotation?: VisionAnnotation;
   error?: { code?: number; message?: string; status?: string };
+}
+
+/**
+ * fullTextAnnotation.text はパネルの見た目の1行ごとに改行が入っている。
+ * Visionは行末（EOL_SURE_SPACE）と段落末（LINE_BREAK）を区別しているので、
+ * 構造をたどり直して「段落＝1行」の形に組み直す。
+ */
+function textFromAnnotation(annotation: VisionAnnotation | undefined): string {
+  const paragraphs: string[] = [];
+
+  for (const page of annotation?.pages ?? []) {
+    for (const block of page.blocks ?? []) {
+      for (const paragraph of block.paragraphs ?? []) {
+        const lines: string[] = [];
+        let line = '';
+        for (const word of paragraph.words ?? []) {
+          for (const symbol of word.symbols ?? []) {
+            line += symbol.text ?? '';
+            switch (symbol.property?.detectedBreak?.type) {
+              case 'SPACE':
+              case 'SURE_SPACE':
+                line += ' ';
+                break;
+              case 'EOL_SURE_SPACE':
+              case 'LINE_BREAK':
+                lines.push(line);
+                line = '';
+                break;
+              case 'HYPHEN':
+                // 行またぎのハイフンは落として続きをつなぐ
+                line = line.replace(/[-‐-]$/, '');
+                lines.push(line);
+                line = '';
+                break;
+              default:
+                break;
+            }
+          }
+        }
+        if (line) lines.push(line);
+        const joined = joinWrappedLines(lines);
+        if (joined) paragraphs.push(joined);
+      }
+    }
+  }
+
+  // 構造が取れないときは素のテキストで妥協する
+  return paragraphs.length > 0 ? paragraphs.join('\n') : (annotation?.text ?? '');
+}
+
+/** 折り返しでできた行をつなぐ。英単語どうしのときだけ空白を入れる。 */
+function joinWrappedLines(lines: string[]): string {
+  return lines
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .reduce((acc, line) => {
+      if (!acc) return line;
+      const left = acc[acc.length - 1];
+      const right = line[0];
+      const needsSpace = /[0-9A-Za-z]/.test(left) && /[0-9A-Za-z]/.test(right);
+      return acc + (needsSpace ? ' ' : '') + line;
+    }, '');
 }
 
 /** 返ってきたエラーを、利用者が次に何をすればいいか分かる日本語にする。 */
@@ -126,5 +209,5 @@ export async function recognize(
       ? Math.round((confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100)
       : 0;
 
-  return { text: cleanOcrText(annotation?.text ?? ''), confidence };
+  return { text: cleanOcrText(textFromAnnotation(annotation)), confidence };
 }
