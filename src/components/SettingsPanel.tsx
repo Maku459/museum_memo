@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { BuildOptions } from '../types';
 
 interface Props {
@@ -8,8 +9,16 @@ interface Props {
 }
 
 export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKey }: Props) {
+  // キー未設定なら最初から開く。以降は利用者の開閉に任せる
+  // （openを毎回計算すると、キーを入力した瞬間に閉じてしまう）。
+  const [open, setOpen] = useState(!apiKey);
+
   return (
-    <details className="settings" open={!apiKey}>
+    <details
+      className="settings"
+      open={open}
+      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
+    >
       <summary>まとめ方の設定{apiKey ? '' : '（APIキーの設定が必要です）'}</summary>
 
       <div className="settings-grid">
@@ -82,6 +91,19 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
             />
           </label>
         )}
+
+        <label className="check standalone">
+          <input
+            type="checkbox"
+            checked={options.joinLinesAtSentence}
+            onChange={(e) => onChange({ joinLinesAtSentence: e.target.checked })}
+          />
+          「。」が来るまで改行しない
+          <span className="hint">
+            パネルの折り返しで切れた文をつなぎ、1文を1行にまとめます。
+            外すと読み取ったままの改行になります。
+          </span>
+        </label>
 
         <fieldset>
           <legend>載せるもの</legend>

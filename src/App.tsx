@@ -7,7 +7,7 @@ import { loadApiKey, recognize, saveApiKey } from './lib/vision';
 import { buildSections } from './lib/group';
 import { buildMarkdown, forgetDataUrl } from './lib/markdown';
 import { copyToClipboard, downloadMarkdown, downloadZip } from './lib/download';
-import { sanitizeFileName } from './lib/text';
+import { joinBySentence, sanitizeFileName } from './lib/text';
 import { defaultBuildOptions, type BuildOptions, type Photo, type PhotoKind } from './types';
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|tiff?|avif|heic|heif)$/i;
@@ -48,6 +48,8 @@ export default function App() {
   photosRef.current = photos;
   const apiKeyRef = useRef(apiKey);
   apiKeyRef.current = apiKey;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
 
   const patchPhoto = useCallback((id: string, patch: Partial<Photo>) => {
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -71,7 +73,10 @@ export default function App() {
               ? {
                   ...p,
                   status: 'done',
-                  text: result.text,
+                  rawText: result.text,
+                  text: optionsRef.current.joinLinesAtSentence
+                    ? joinBySentence(result.text)
+                    : result.text,
                   confidence: result.confidence,
                   edited: false,
                 }
@@ -116,6 +121,7 @@ export default function App() {
         kind: 'exhibit',
         status: 'idle',
         text: '',
+        rawText: '',
         confidence: 0,
         edited: false,
       });
@@ -195,6 +201,17 @@ export default function App() {
     setApiKey(key);
     saveApiKey(key);
   }, []);
+
+  // 改行のまとめ方を切り替えたら、手を入れていない本文を組み直す
+  useEffect(() => {
+    setPhotos((prev) =>
+      prev.map((p) =>
+        p.edited || !p.rawText
+          ? p
+          : { ...p, text: options.joinLinesAtSentence ? joinBySentence(p.rawText) : p.rawText },
+      ),
+    );
+  }, [options.joinLinesAtSentence]);
 
   const sections = useMemo(() => buildSections(photos, options), [photos, options]);
 

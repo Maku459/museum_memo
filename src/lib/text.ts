@@ -38,7 +38,44 @@ export function cleanOcrText(raw: string): string {
   return out.join('\n').trim();
 }
 
-/** 空白や記号を除いた「意味のある文字」の数。解説文かどうかの判定に使う。 */
+/** 行をつなぐ。英数字どうしのときだけ空白を入れ、日本語はそのまま詰める。 */
+export function concatLines(left: string, right: string): string {
+  if (!left) return right;
+  if (!right) return left;
+  const needsSpace = /[0-9A-Za-z]$/.test(left) && /^[0-9A-Za-z]/.test(right);
+  return left + (needsSpace ? ' ' : '') + right;
+}
+
+/** 文の終わり。閉じ括弧が続くこともある。 */
+const SENTENCE_END_RE = /[。．.！？!?…]["'」』）)】〕]*$/;
+/** 箇条書きや番号で始まる行は、前の文につながずに独立させる。 */
+const LIST_START_RE = /^([-–—・･*●○■□◆◇▲△※]|\(?\d+[.)．、）])/;
+/** 見出しが本文とくっつかないよう、短い行はつなぎ元にしない。 */
+const MIN_CHARS_TO_MERGE = 15;
+
+/**
+ * 「。」などの文末が来るまで改行しないようにまとめる。
+ * パネルの折り返しで切れた文が、1文＝1行になる。
+ */
+export function joinBySentence(text: string): string {
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    const prev = out[out.length - 1];
+    const mergeable =
+      prev !== undefined &&
+      prev !== '' &&
+      line !== '' &&
+      !SENTENCE_END_RE.test(prev) &&
+      meaningfulCharCount(prev) >= MIN_CHARS_TO_MERGE &&
+      !LIST_START_RE.test(line);
+
+    if (mergeable) out[out.length - 1] = concatLines(prev, line);
+    else out.push(line);
+  }
+  return out.join('\n');
+}
+
+/** 空白や記号を除いた「意味のある文字」の数。 */
 export function meaningfulCharCount(text: string): number {
   return (text.match(MEANINGFUL_RE) ?? []).length;
 }

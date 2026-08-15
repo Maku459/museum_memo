@@ -20,8 +20,10 @@ export interface Photo {
   /** 展示物か解説文か。取り込み時は展示物で、利用者が解説文に切り替える。 */
   kind: PhotoKind;
   status: PhotoStatus;
-  /** 読み取った全文（整形済み） */
+  /** 読み取った全文（整形済み）。表示・出力に使うのはこちら。 */
   text: string;
+  /** 読み取った直後の文章。設定を変えたときに組み直す元になる。 */
+  rawText: string;
   /** Visionの信頼度 0-100 */
   confidence: number;
   /** 本文を手で直した／手入力したか */
@@ -53,6 +55,8 @@ export interface BuildOptions {
   imageMode: 'files' | 'dataurl';
   /** 画像を入れるフォルダ名（imageMode === 'files' のとき） */
   imageDir: string;
+  /** 「。」などの文末まで改行せずにまとめるか */
+  joinLinesAtSentence: boolean;
   /** 撮影時刻を各セクションに書き出すか */
   includeTimestamps: boolean;
   /** OCRの信頼度など、読み取りの補足情報を書き出すか */
@@ -66,6 +70,7 @@ export const defaultBuildOptions: BuildOptions = {
   groupGapMinutes: 5,
   imageMode: 'files',
   imageDir: 'images',
+  joinLinesAtSentence: true,
   includeTimestamps: true,
   includeOcrNotes: true,
   includeCaptionPhotos: false,
