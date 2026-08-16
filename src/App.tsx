@@ -203,13 +203,14 @@ export default function App() {
           : {
               ...p,
               text: formatCaption(p.rawText, {
+                dropFurigana: options.dropFurigana,
                 dropEnglishText: options.dropEnglishText,
                 joinLinesAtSentence: options.joinLinesAtSentence,
               }),
             },
       ),
     );
-  }, [options.dropEnglishText, options.joinLinesAtSentence]);
+  }, [options.dropFurigana, options.dropEnglishText, options.joinLinesAtSentence]);
 
   const sections = useMemo(() => buildSections(photos), [photos]);
 

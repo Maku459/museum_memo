@@ -46,6 +46,8 @@ export interface BuildOptions {
   imageDir: string;
   /** 「。」などの文末まで改行せずにまとめるか */
   joinLinesAtSentence: boolean;
+  /** 漢字に振られたふりがなの行を落とすか */
+  dropFurigana: boolean;
   /** 日本語と併記された英文を落とすか */
   dropEnglishText: boolean;
   /** 読み取りの補足情報と写真一覧を書き出すか */
@@ -59,6 +61,7 @@ export const defaultBuildOptions: BuildOptions = {
   imageMode: 'files',
   imageDir: 'images',
   joinLinesAtSentence: true,
+  dropFurigana: true,
   dropEnglishText: true,
   includeOcrNotes: true,
   includePhotos: false,
