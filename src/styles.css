@@ -169,6 +169,71 @@ button.danger:hover {
   color: var(--danger);
 }
 
+/* ---- ルビの選択 ---- */
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segmented button {
+  border: none;
+  border-radius: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  padding: 0.3rem 0.9rem;
+}
+
+.segmented button:last-child {
+  border-right: none;
+}
+
+.segmented button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.ruby-choice {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 0.7rem 1rem;
+  margin: 0.8rem 0 0.5rem;
+}
+
+.ruby-choice-head {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.ruby-choice-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.ruby-choice .hint {
+  margin: 0.4rem 0 0;
+}
+
+.ruby-ratio {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+@media (pointer: coarse) {
+  .segmented button {
+    min-height: 40px;
+  }
+}
+
 /* ---- settings ---- */
 
 .settings {

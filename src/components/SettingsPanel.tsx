@@ -78,39 +78,6 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
         <label className="check standalone">
           <input
             type="checkbox"
-            checked={options.dropFurigana}
-            onChange={(e) => onChange({ dropFurigana: e.target.checked })}
-          />
-          ふりがな（ルビ）を取り込まない
-          <span className="hint">
-            ルビは本文より小さく組まれるため、文字の大きさで見分けて落とします。
-          </span>
-        </label>
-
-        {options.dropFurigana && (
-          <label>
-            ルビとみなす大きさ
-            <span className="range-row">
-              <input
-                type="range"
-                min={0.3}
-                max={0.95}
-                step={0.05}
-                value={options.rubyRatio}
-                onChange={(e) => onChange({ rubyRatio: Number(e.target.value) })}
-              />
-              <output>いちばん小さい本文の{Math.round(options.rubyRatio * 100)}%未満</output>
-            </span>
-            <span className="hint">
-              ルビが残るなら上げ、本文まで消えるなら下げてください。
-              変更しても読み取り直しは起きません。
-            </span>
-          </label>
-        )}
-
-        <label className="check standalone">
-          <input
-            type="checkbox"
             checked={options.dropEnglishText}
             onChange={(e) => onChange({ dropEnglishText: e.target.checked })}
           />
