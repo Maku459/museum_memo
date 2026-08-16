@@ -45,27 +45,16 @@ function sourceNote(photo: Photo): string {
   return `読み取り: ${photo.exportName}（${detail}）`;
 }
 
-function imageBlock(photo: Photo, alt: string, src: string, opts: BuildOptions): string {
-  const lines = [`![${escapeMarkdownInline(alt)}](${src})`];
-  const notes: string[] = [];
-  if (opts.includeTimestamps) notes.push(`${formatTime(photo.takenAt)} 撮影`);
-  if (opts.imageMode === 'files') notes.push(photo.exportName);
-  if (notes.length > 0) lines.push(`*${notes.join(' — ')}*`);
-  return lines.join('\n');
-}
-
-/** 見学メモ本体を組み立てる。解説文のOCR結果は省略せず全文を入れる。 */
+/** 見学メモ本体を組み立てる。読み取った解説文は省略せず全文を入れる。 */
 export async function buildMarkdown(
   photos: Photo[],
   sections: Section[],
   opts: BuildOptions,
 ): Promise<string> {
-  const used = sections.flatMap((s) => [
-    ...s.before,
-    ...s.after,
-    ...(s.caption && opts.includeCaptionPhotos ? [s.caption] : []),
-  ]);
-  const srcOf = await makeSrcResolver(used, opts);
+  const srcOf = await makeSrcResolver(
+    opts.includePhotos ? sections.map((s) => s.photo) : [],
+    opts,
+  );
 
   const blocks: string[] = [];
   blocks.push(`# ${opts.title.trim() || '博物館 見学メモ'}`);
@@ -78,15 +67,12 @@ export async function buildMarkdown(
       formatDate(first) === formatDate(last)
         ? formatDate(first)
         : `${formatDate(first)} 〜 ${formatDate(last)}`;
-    const captionCount = photos.filter((p) => p.kind === 'caption').length;
-    const meta = [
-      `- 訪問日: ${day}（${formatTime(first)}〜${formatTime(last)}）`,
-      `- 写真: ${photos.length}枚（解説文 ${captionCount}枚 / 展示物 ${
-        photos.length - captionCount
-      }枚）`,
-      `- 項目: ${sections.length}件`,
-    ];
-    blocks.push(meta.join('\n'));
+    blocks.push(
+      [
+        `- 訪問日: ${day}（${formatTime(first)}〜${formatTime(last)}）`,
+        `- 解説パネル: ${photos.length}枚`,
+      ].join('\n'),
+    );
   }
 
   if (opts.includeOcrNotes) {
@@ -99,34 +85,24 @@ export async function buildMarkdown(
 
   sections.forEach((section, index) => {
     const number = index + 1;
-    const title = section.title || (section.caption ? `展示 ${number}` : '展示物（解説なし）');
+    const title = section.title || `解説 ${number}`;
     blocks.push(`## ${number}. ${escapeMarkdownInline(title)}`);
 
     if (opts.includeTimestamps) {
-      blocks.push(`*${formatDateTime(section.startedAt)}*`);
+      blocks.push(`*${formatDateTime(section.photo.takenAt)}*`);
     }
 
-    for (const photo of section.before) {
-      blocks.push(imageBlock(photo, title, srcOf(photo), opts));
+    if (opts.includePhotos) {
+      const lines = [`![${escapeMarkdownInline(title)}](${srcOf(section.photo)})`];
+      if (opts.imageMode === 'files') lines.push(`*${section.photo.exportName}*`);
+      blocks.push(lines.join('\n'));
     }
 
-    if (section.caption) {
-      const body = section.caption.text.trim();
-      if (body) {
-        blocks.push(escapeMarkdownBlock(body));
-      } else {
-        blocks.push('*（このパネルからは文字を読み取れませんでした）*');
-      }
-      if (opts.includeOcrNotes) {
-        blocks.push(`*${sourceNote(section.caption)}*`);
-      }
-      if (opts.includeCaptionPhotos) {
-        blocks.push(imageBlock(section.caption, `${title}（解説パネル）`, srcOf(section.caption), opts));
-      }
-    }
+    const body = section.photo.text.trim();
+    blocks.push(body ? escapeMarkdownBlock(body) : '*（このパネルからは文字を読み取れませんでした）*');
 
-    for (const photo of section.after) {
-      blocks.push(imageBlock(photo, title, srcOf(photo), opts));
+    if (opts.includeOcrNotes) {
+      blocks.push(`*${sourceNote(section.photo)}*`);
     }
   });
 
@@ -135,10 +111,9 @@ export async function buildMarkdown(
     blocks.push('## 付録: 写真一覧');
     const rows = sorted.map((photo) => {
       const time = `${formatDateTime(photo.takenAt)}${photo.takenAtFromExif ? '' : '（推定）'}`;
-      const kind = photo.kind === 'caption' ? '解説文' : '展示物';
-      return `| ${photo.exportName} | ${time} | ${kind} |`;
+      return `| ${photo.exportName} | ${time} | ${photo.text.length}字 |`;
     });
-    blocks.push(['| ファイル | 撮影日時 | 種別 |', '| --- | --- | --- |', ...rows].join('\n'));
+    blocks.push(['| ファイル | 撮影日時 | 文字数 |', '| --- | --- | --- |', ...rows].join('\n'));
   }
 
   return `${blocks.join('\n\n')}\n`;

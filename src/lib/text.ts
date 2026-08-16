@@ -75,6 +75,43 @@ export function joinBySentence(text: string): string {
   return out.join('\n');
 }
 
+const JAPANESE_RE = /[぀-ヿ㐀-䶿一-鿿]/;
+/** 英文とみなすのに必要なアルファベットの数。単位や記号だけの行を巻き込まないための下限。 */
+const MIN_LATIN_LETTERS = 8;
+
+/**
+ * 日本語と英語が併記されたパネルから、英文だけの行を落とす。
+ *
+ * 日本語がまじる行は残す（「1953年 Jomon」のような行を消さないため）。
+ * 「H 25.0cm」のような短い表記も、アルファベットが少ないので残る。
+ */
+export function dropEnglishLines(text: string): string {
+  const kept = text.split('\n').filter((line) => {
+    if (JAPANESE_RE.test(line)) return true;
+    const latin = (line.match(/[A-Za-z]/g) ?? []).length;
+    return latin < MIN_LATIN_LETTERS;
+  });
+
+  // 落とした跡に空行が並ばないようにする
+  const out: string[] = [];
+  for (const line of kept) {
+    if (line.trim() === '' && (out.length === 0 || out[out.length - 1].trim() === '')) continue;
+    out.push(line);
+  }
+  return out.join('\n').trim();
+}
+
+/** 読み取った文章に、設定に応じた整形をかける。読み取り直さずに何度でも適用できる。 */
+export function formatCaption(
+  rawText: string,
+  opts: { dropEnglishText: boolean; joinLinesAtSentence: boolean },
+): string {
+  let text = rawText;
+  if (opts.dropEnglishText) text = dropEnglishLines(text);
+  if (opts.joinLinesAtSentence) text = joinBySentence(text);
+  return text;
+}
+
 /** 空白や記号を除いた「意味のある文字」の数。 */
 export function meaningfulCharCount(text: string): number {
   return (text.match(MEANINGFUL_RE) ?? []).length;

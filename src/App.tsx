@@ -7,8 +7,8 @@ import { loadApiKey, recognize, saveApiKey } from './lib/vision';
 import { buildSections } from './lib/group';
 import { buildMarkdown, forgetDataUrl } from './lib/markdown';
 import { copyToClipboard, downloadMarkdown, downloadZip } from './lib/download';
-import { joinBySentence, sanitizeFileName } from './lib/text';
-import { defaultBuildOptions, type BuildOptions, type Photo, type PhotoKind } from './types';
+import { formatCaption, sanitizeFileName } from './lib/text';
+import { defaultBuildOptions, type BuildOptions, type Photo } from './types';
 
 const IMAGE_EXT = /\.(jpe?g|png|webp|gif|bmp|tiff?|avif|heic|heif)$/i;
 
@@ -55,8 +55,7 @@ export default function App() {
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }, []);
 
-  /** 解説文として選ばれた写真だけをVision APIに送る。 */
-  const runOcr = useCallback(
+  const readPhoto = useCallback(
     async (target: Photo) => {
       const key = apiKeyRef.current;
       if (!key) {
@@ -74,9 +73,7 @@ export default function App() {
                   ...p,
                   status: 'done',
                   rawText: result.text,
-                  text: optionsRef.current.joinLinesAtSentence
-                    ? joinBySentence(result.text)
-                    : result.text,
+                  text: formatCaption(result.text, optionsRef.current),
                   confidence: result.confidence,
                   edited: false,
                 }
@@ -92,74 +89,71 @@ export default function App() {
     [patchPhoto],
   );
 
-  const addFiles = useCallback(async (fileList: FileList | File[]) => {
-    const files = Array.from(fileList).filter(
-      (f) => f.type.startsWith('image/') || IMAGE_EXT.test(f.name),
-    );
-    if (files.length === 0) {
-      setNotice('画像ファイルが見つかりませんでした。');
-      return;
-    }
-    setNotice('');
-
-    const taken = new Set(photosRef.current.map((p) => p.exportName));
-    const created: Photo[] = [];
-    for (const file of files) {
-      const meta = await readImageMeta(file);
-      const exportName = uniqueExportName(file.name, taken);
-      taken.add(exportName);
-      created.push({
-        id: nextId(),
-        file,
-        url: URL.createObjectURL(file),
-        exportName,
-        takenAt: meta.takenAt,
-        takenAtFromExif: meta.takenAtFromExif,
-        width: meta.width,
-        height: meta.height,
-        // 取り込んだ時点では展示物。解説パネルは利用者が選ぶ。
-        kind: 'exhibit',
-        status: 'idle',
-        text: '',
-        rawText: '',
-        confidence: 0,
-        edited: false,
-      });
-    }
-
-    setPhotos((prev) => [...prev, ...created].sort(byTime));
-  }, []);
-
-  /** 種別の切り替え。解説文にしたら、まだ読んでいなければそのまま読み取る。 */
-  const changeKind = useCallback(
-    (id: string, kind: PhotoKind) => {
-      const target = photosRef.current.find((p) => p.id === id);
-      if (!target || target.kind === kind) return;
-      patchPhoto(id, { kind });
-      if (kind === 'caption' && target.status === 'idle' && !target.text) {
-        void runOcr({ ...target, kind });
+  /** まだ読み取っていない写真を順に処理する。 */
+  const readPending = useCallback(
+    async (targets: Photo[]) => {
+      for (const photo of targets) {
+        if (!apiKeyRef.current) return;
+        await readPhoto(photo);
       }
     },
-    [patchPhoto, runOcr],
+    [readPhoto],
   );
 
-  const retryOcr = useCallback(
+  const addFiles = useCallback(
+    async (fileList: FileList | File[]) => {
+      const files = Array.from(fileList).filter(
+        (f) => f.type.startsWith('image/') || IMAGE_EXT.test(f.name),
+      );
+      if (files.length === 0) {
+        setNotice('画像ファイルが見つかりませんでした。');
+        return;
+      }
+      setNotice('');
+
+      const taken = new Set(photosRef.current.map((p) => p.exportName));
+      const created: Photo[] = [];
+      for (const file of files) {
+        const meta = await readImageMeta(file);
+        const exportName = uniqueExportName(file.name, taken);
+        taken.add(exportName);
+        created.push({
+          id: nextId(),
+          file,
+          url: URL.createObjectURL(file),
+          exportName,
+          takenAt: meta.takenAt,
+          takenAtFromExif: meta.takenAtFromExif,
+          width: meta.width,
+          height: meta.height,
+          status: 'idle',
+          text: '',
+          rawText: '',
+          confidence: 0,
+          edited: false,
+        });
+      }
+
+      setPhotos((prev) => [...prev, ...created].sort(byTime));
+      // 取り込んだものはすべて解説パネルなので、そのまま読み取りに進む
+      void readPending(created);
+    },
+    [readPending],
+  );
+
+  const retryRead = useCallback(
     (id: string) => {
       const target = photosRef.current.find((p) => p.id === id);
-      if (target) void runOcr(target);
+      if (target) void readPhoto(target);
     },
-    [runOcr],
+    [readPhoto],
   );
 
-  /** 解説文にしたのに未読のものをまとめて読み取る。 */
-  const readAllCaptions = useCallback(async () => {
-    const pending = photosRef.current.filter(
-      (p) => p.kind === 'caption' && p.status !== 'done' && p.status !== 'reading',
+  const readAll = useCallback(() => {
+    void readPending(
+      photosRef.current.filter((p) => p.status === 'idle' || p.status === 'error'),
     );
-    for (const photo of pending) {
-      await runOcr(photo);
-    }
-  }, [runOcr]);
+  }, [readPending]);
 
   const removePhoto = useCallback((id: string) => {
     setPhotos((prev) => {
@@ -182,9 +176,7 @@ export default function App() {
   }, []);
 
   const changeText = useCallback((id: string, text: string) => {
-    setPhotos((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, text, edited: true } : p)),
-    );
+    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, text, edited: true } : p)));
   }, []);
 
   const changeTakenAt = useCallback((id: string, takenAt: Date) => {
@@ -202,24 +194,27 @@ export default function App() {
     saveApiKey(key);
   }, []);
 
-  // 改行のまとめ方を切り替えたら、手を入れていない本文を組み直す
+  // 整形の設定を変えたら、手を入れていない本文を組み直す（読み取り直しは不要）
   useEffect(() => {
     setPhotos((prev) =>
       prev.map((p) =>
         p.edited || !p.rawText
           ? p
-          : { ...p, text: options.joinLinesAtSentence ? joinBySentence(p.rawText) : p.rawText },
+          : {
+              ...p,
+              text: formatCaption(p.rawText, {
+                dropEnglishText: options.dropEnglishText,
+                joinLinesAtSentence: options.joinLinesAtSentence,
+              }),
+            },
       ),
     );
-  }, [options.joinLinesAtSentence]);
+  }, [options.dropEnglishText, options.joinLinesAtSentence]);
 
-  const sections = useMemo(() => buildSections(photos, options), [photos, options]);
+  const sections = useMemo(() => buildSections(photos), [photos]);
 
-  const captionCount = photos.filter((p) => p.kind === 'caption').length;
   const readingCount = photos.filter((p) => p.status === 'reading').length;
-  const unreadCount = photos.filter(
-    (p) => p.kind === 'caption' && p.status !== 'done' && p.status !== 'reading' && !p.text,
-  ).length;
+  const unreadCount = photos.filter((p) => p.status === 'idle' || p.status === 'error').length;
 
   // Markdownは入力が変わるたびに組み直す。連続入力で走りすぎないよう少し待つ。
   useEffect(() => {
@@ -260,10 +255,8 @@ export default function App() {
       <header className="app-head">
         <h1>博物館メモ</h1>
         <p>
-          展示物と解説文の写真をまとめてアップロードし、解説パネルの写真を選ぶと、
-          その文字をGoogle Cloud Visionで読み取って、撮影時刻の近い展示物写真を並べた
-          Markdownの見学メモを作ります。Googleに送られるのは<strong>解説文に指定した写真だけ</strong>で、
-          展示物の写真はブラウザから出ません。
+          博物館で撮った解説パネルの写真をまとめてアップロードすると、
+          Google Cloud Visionで文字を読み取り、撮影時刻の順に並べたMarkdownの見学メモを作ります。
         </p>
       </header>
 
@@ -289,9 +282,9 @@ export default function App() {
             e.target.value = '';
           }}
         />
-        <span className="dropzone-main">写真をドロップ、またはクリックして選ぶ</span>
+        <span className="dropzone-main">解説パネルの写真をドロップ、またはクリックして選ぶ</span>
         <span className="hint">
-          展示物も解説パネルも、まとめて選んで構いません。撮影時刻で自動的に並べます。
+          取り込んだ写真はすべて読み取ります。撮影時刻の順に並べるので、順番は気にしなくて構いません。
         </span>
       </label>
 
@@ -308,14 +301,11 @@ export default function App() {
       {photos.length > 0 && (
         <>
           <div className="statusbar">
-            <span>
-              {photos.length}枚（解説文 {captionCount} / 展示物 {photos.length - captionCount}）・
-              {sections.length}項目
-            </span>
+            <span>{photos.length}枚</span>
             {readingCount > 0 && <span className="reading">読み取り中… {readingCount}枚</span>}
             {unreadCount > 0 && readingCount === 0 && (
-              <button type="button" onClick={() => void readAllCaptions()}>
-                未読の解説文 {unreadCount}枚を読み取る
+              <button type="button" onClick={readAll}>
+                未読の{unreadCount}枚を読み取る
               </button>
             )}
             <button type="button" className="ghost danger" onClick={clearAll}>
@@ -324,20 +314,17 @@ export default function App() {
           </div>
 
           <section>
-            <h2>写真（{photos.length}枚）</h2>
-            <p className="hint">
-              解説パネルの写真を「解説文」に切り替えてください。切り替えた写真だけを読み取ります。
-            </p>
+            <h2>解説パネル（{photos.length}枚）</h2>
+            <p className="hint">読み取りの誤字はその場で直せます。直した内容はすぐ反映されます。</p>
             <ul className="cards">
               {photos.map((photo, index) => (
                 <PhotoCard
                   key={photo.id}
                   photo={photo}
                   index={index}
-                  onChangeKind={changeKind}
                   onChangeText={changeText}
                   onChangeTakenAt={changeTakenAt}
-                  onRetry={retryOcr}
+                  onRetry={retryRead}
                   onRemove={removePhoto}
                 />
               ))}
@@ -346,7 +333,7 @@ export default function App() {
 
           <section>
             <h2>組み立て結果</h2>
-            <p className="hint">解説文の前後に、撮影時刻の近い展示物写真を差し込んでいます。</p>
+            <p className="hint">撮影時刻の順に、1枚を1項目として並べています。</p>
             <OutlinePanel sections={sections} />
           </section>
 

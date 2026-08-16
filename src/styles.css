@@ -6,8 +6,6 @@
   --line: #ddd8d0;
   --accent: #8a6a3b;
   --accent-soft: #f0e7d8;
-  --exhibit: #3f6f8a;
-  --exhibit-soft: #e2eef4;
   --danger: #a3402f;
   --radius: 10px;
   color-scheme: light dark;
@@ -22,8 +20,6 @@
     --line: #3b3633;
     --accent: #d3ad72;
     --accent-soft: #3a3126;
-    --exhibit: #8fc0d8;
-    --exhibit-soft: #23323b;
     --danger: #e08a78;
   }
 }
@@ -173,30 +169,6 @@ button.danger:hover {
   color: var(--danger);
 }
 
-.segmented {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.segmented button {
-  border: none;
-  border-radius: 0;
-  border-right: 1px solid var(--line);
-  background: transparent;
-  padding: 0.25rem 0.7rem;
-}
-
-.segmented button:last-child {
-  border-right: none;
-}
-
-.segmented button.on {
-  background: var(--accent);
-  color: #fff;
-}
-
 /* ---- settings ---- */
 
 .settings {
@@ -253,22 +225,6 @@ button.danger:hover {
   font-weight: 400;
 }
 
-.range-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.range-row input {
-  flex: 1;
-}
-
-.range-row output {
-  min-width: 3.5em;
-  font-weight: 400;
-  color: var(--muted);
-}
-
 input[type='text'],
 input[type='datetime-local'],
 select,
@@ -305,13 +261,9 @@ textarea {
   gap: 1rem;
   padding: 0.8rem;
   border: 1px solid var(--line);
-  border-left: 4px solid var(--exhibit);
+  border-left: 4px solid var(--accent);
   border-radius: var(--radius);
   background: var(--panel);
-}
-
-.card.kind-caption {
-  border-left-color: var(--accent);
 }
 
 .card-media {
@@ -388,19 +340,6 @@ textarea {
   color: var(--muted);
 }
 
-.progress {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.progress div {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.2s;
-}
-
 /* ---- outline ---- */
 
 .outline {
@@ -441,7 +380,7 @@ textarea {
   height: 54px;
   object-fit: cover;
   border-radius: 4px;
-  border: 2px solid var(--exhibit);
+  border: 1px solid var(--line);
 }
 
 .outline-text {
@@ -502,10 +441,6 @@ textarea {
   button.ghost {
     min-height: 36px;
     padding: 0.3rem 0.6rem;
-  }
-
-  .segmented button {
-    min-height: 40px;
   }
 
   input[type='text'],
