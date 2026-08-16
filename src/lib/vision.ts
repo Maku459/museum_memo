@@ -99,6 +99,8 @@ const SMALLEST_TEXT_PERCENTILE = 0.1;
 
 /** ルビはかなで振られる。漢字・英数字を含む語は、小さくてもルビとみなさない。 */
 const KANA_ONLY_RE = /^[ぁ-ゖァ-ヺーゝゞヽヾ・･、。\s]+$/;
+/** かなが1文字も無い語（「、」「。」だけの語など）はルビではない。 */
+const KANA_RE = /[ぁ-ゖァ-ヺ]/;
 /** 大きさの基準に使う文字。ほぼ正方形に組まれるので比べやすい。 */
 const KANJI_RE = /[㐀-䶿一-鿿]/;
 /** 英文とみなすのに必要なアルファベットの数。単位や記号だけの行を巻き込まないための下限。 */
@@ -133,13 +135,6 @@ function boxThickness(box: BoundingPoly | undefined): number {
   return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
 }
 
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-}
-
 function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -153,12 +148,18 @@ function symbolsOf(page: VisionPage): VisionSymbol[] {
   );
 }
 
-/** 語の太さ。文字ごとの太さの中央値を採り、無ければ語の枠から拾う。 */
+/**
+ * 語の太さ。文字ごとの太さの**最大**を採り、無ければ語の枠から拾う。
+ *
+ * 「、」「。」は字面が小さく、枠も小さく返ってくる。平均や中央値だと
+ * 「た。」のような語がその分だけ細く見え、本文なのにルビ扱いされてしまう。
+ * ルビの語はどの文字も小さいので、最大を見ても取りこぼさない。
+ */
 function wordThickness(word: VisionWord): number {
   const perSymbol = (word.symbols ?? [])
     .map((s) => boxThickness(s.boundingBox))
     .filter((v) => v > 0);
-  if (perSymbol.length > 0) return median(perSymbol);
+  if (perSymbol.length > 0) return Math.max(...perSymbol);
   return boxThickness(word.boundingBox);
 }
 
@@ -213,8 +214,10 @@ export function extractText(
       if (!opts.dropRuby || rubyLimit <= 0) return false;
       const thickness = wordThickness(word);
       if (thickness <= 0 || thickness >= rubyLimit) return false;
+      // かなを含み、かつかなと句読点しか含まない語だけをルビとする。
+      // 「、」「。」だけの語は字面が小さいが、本文の一部なので落とさない。
       const text = wordText(word);
-      return text.trim() !== '' && KANA_ONLY_RE.test(text);
+      return KANA_RE.test(text) && KANA_ONLY_RE.test(text);
     };
 
     for (const block of page.blocks ?? []) {
