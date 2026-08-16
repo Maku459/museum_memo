@@ -11,7 +11,10 @@ const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
 const STORAGE_KEY = 'museum-memo.vision-api-key';
 
 export interface OcrResult {
+  /** 読み取った全文（ルビを含む） */
   text: string;
+  /** 本文より小さく組まれたかな（ルビ）を落とした全文 */
+  textWithoutRuby: string;
   /** 0-100。Visionのページ単位の信頼度をならしたもの。 */
   confidence: number;
 }
@@ -54,15 +57,25 @@ type BreakType = 'SPACE' | 'SURE_SPACE' | 'EOL_SURE_SPACE' | 'LINE_BREAK' | 'HYP
 
 interface VisionSymbol {
   text?: string;
+  boundingBox?: BoundingPoly;
   property?: { detectedBreak?: { type?: BreakType } };
 }
 
+interface VisionWord {
+  symbols?: VisionSymbol[];
+  boundingBox?: BoundingPoly;
+}
+
 interface VisionParagraph {
-  words?: { symbols?: VisionSymbol[] }[];
+  words?: VisionWord[];
 }
 
 interface VisionBlock {
   paragraphs?: VisionParagraph[];
+}
+
+interface BoundingPoly {
+  vertices?: { x?: number; y?: number }[];
 }
 
 interface VisionPage {
@@ -80,26 +93,88 @@ interface VisionResponse {
   error?: { code?: number; message?: string; status?: string };
 }
 
+/** ルビは本文より小さく組まれる。本文の何割より細ければルビとみなすか。 */
+const RUBY_THICKNESS_RATIO = 0.6;
+/** ルビはかなで振られる。漢字や英数字を含む語は、小さくてもルビとみなさない。 */
+const KANA_ONLY_RE = /^[ぁ-ゖァ-ヺーゝゞヽヾ\s]+$/;
+
+/**
+ * 文字の「太さ」。縦書きは幅、横書きは高さが文字の大きさを表すので、短い方の辺を採る。
+ * Visionは書字方向を返さないが、縦書きの語は縦長・横書きの語は横長になるため、
+ * 短辺を見れば両方を同じ尺度で比べられる。
+ */
+function boxThickness(box: BoundingPoly | undefined): number {
+  const vertices = box?.vertices ?? [];
+  if (vertices.length === 0) return 0;
+  const xs = vertices.map((v) => v.x ?? 0);
+  const ys = vertices.map((v) => v.y ?? 0);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  return Math.min(width, height);
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function wordsOf(page: VisionPage): VisionWord[] {
+  return (page.blocks ?? []).flatMap((b) => (b.paragraphs ?? []).flatMap((p) => p.words ?? []));
+}
+
+/** 語の太さ。boundingBoxが無ければ文字の太さから拾う。 */
+function wordThickness(word: VisionWord): number {
+  const t = boxThickness(word.boundingBox);
+  if (t > 0) return t;
+  return median((word.symbols ?? []).map((s) => boxThickness(s.boundingBox)).filter((v) => v > 0));
+}
+
+function wordText(word: VisionWord): string {
+  return (word.symbols ?? []).map((s) => s.text ?? '').join('');
+}
+
 /**
  * fullTextAnnotation.text はパネルの見た目の1行ごとに改行が入っている。
  * Visionは行末（EOL_SURE_SPACE）と段落末（LINE_BREAK）を区別しているので、
  * 構造をたどり直して「段落＝1行」の形に組み直す。
+ *
+ * `skipRuby` を立てると、本文より小さく組まれたかなだけの語（ルビ）を落とす。
+ * 語ごと落としても行や段落の区切りは残すので、文のつながりは崩れない。
  */
-function textFromAnnotation(annotation: VisionAnnotation | undefined): string {
+function textFromAnnotation(annotation: VisionAnnotation | undefined, skipRuby: boolean): string {
   const paragraphs: string[] = [];
 
   for (const page of annotation?.pages ?? []) {
+    // ページごとに本文の文字の太さを見積もる（見出しやルビに引っぱられにくい中央値）
+    const thicknesses = wordsOf(page)
+      .map(wordThickness)
+      .filter((t) => t > 0);
+    const bodyThickness = median(thicknesses);
+    const rubyLimit = bodyThickness * RUBY_THICKNESS_RATIO;
+
+    const isRuby = (word: VisionWord): boolean => {
+      if (!skipRuby || rubyLimit <= 0) return false;
+      const thickness = wordThickness(word);
+      if (thickness <= 0 || thickness >= rubyLimit) return false;
+      // かなだけの語に限る。小さく組まれた注記（漢字や数字を含む）は残す。
+      const text = wordText(word);
+      return text.trim() !== '' && KANA_ONLY_RE.test(text);
+    };
+
     for (const block of page.blocks ?? []) {
       for (const paragraph of block.paragraphs ?? []) {
         const lines: string[] = [];
         let line = '';
         for (const word of paragraph.words ?? []) {
+          const drop = isRuby(word);
           for (const symbol of word.symbols ?? []) {
-            line += symbol.text ?? '';
+            if (!drop) line += symbol.text ?? '';
             switch (symbol.property?.detectedBreak?.type) {
               case 'SPACE':
               case 'SURE_SPACE':
-                line += ' ';
+                if (!drop) line += ' ';
                 break;
               case 'EOL_SURE_SPACE':
               case 'LINE_BREAK':
@@ -209,5 +284,9 @@ export async function recognize(
       ? Math.round((confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100)
       : 0;
 
-  return { text: cleanOcrText(textFromAnnotation(annotation)), confidence };
+  return {
+    text: cleanOcrText(textFromAnnotation(annotation, false)),
+    textWithoutRuby: cleanOcrText(textFromAnnotation(annotation, true)),
+    confidence,
+  };
 }

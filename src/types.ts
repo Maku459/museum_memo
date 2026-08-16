@@ -18,8 +18,10 @@ export interface Photo {
   status: PhotoStatus;
   /** 表示・出力に使う本文。rawTextに設定を適用したもの。 */
   text: string;
-  /** 読み取った直後の文章。設定を変えたときに組み直す元になる。 */
+  /** 読み取った直後の文章（ルビを含む）。設定を変えたときに組み直す元になる。 */
   rawText: string;
+  /** 文字の大きさからルビを落とした文章。 */
+  rawTextNoRuby: string;
   /** Visionの信頼度 0-100 */
   confidence: number;
   /** 本文を手で直した／手入力したか */

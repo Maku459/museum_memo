@@ -81,11 +81,11 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
             checked={options.dropFurigana}
             onChange={(e) => onChange({ dropFurigana: e.target.checked })}
           />
-          ふりがなを取り込まない
+          ふりがな（ルビ）を取り込まない
           <span className="hint">
-            漢字の上のふりがなは別の行として読み取られるため、
-            前後に漢字がある「ひらがなだけの行」を落とします。
-            カタカナで振られたふりがなは残ります。
+            ルビは本文より小さく組まれるため、文字の大きさで見分けて落とします
+            （本文の7割未満で、かなだけの語）。念のため、前後に漢字がある
+            「ひらがなだけの行」も落とします。
           </span>
         </label>
 
