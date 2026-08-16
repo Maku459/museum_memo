@@ -101,12 +101,57 @@ export function dropEnglishLines(text: string): string {
   return out.join('\n').trim();
 }
 
+const KANJI_RE = /[㐀-䶿一-鿿]/;
+/** ひらがな・長音・区切りだけでできた行。ふりがなはほぼこの形になる。 */
+const HIRAGANA_ONLY_RE = /^[ぁ-ゖー\s、。・･「」『』（）()]+$/;
+
+/**
+ * 漢字の上に振られたふりがなを落とす。
+ *
+ * Visionはふりがなを本文とは別の行として返すため、
+ * 「ひらがなだけの行」で、かつ前後に漢字を含む行があるものを落とす。
+ * 単独で出てくるひらがなの行（子ども向けの表記など）は残す。
+ */
+export function dropFuriganaLines(text: string): string {
+  const lines = text.split('\n');
+
+  /** 空行を飛ばして、前後の行に漢字があるか見る。 */
+  const hasKanjiNeighbor = (index: number): boolean => {
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (lines[i].trim() === '') continue;
+      if (KANJI_RE.test(lines[i])) return true;
+      break;
+    }
+    for (let i = index + 1; i < lines.length; i += 1) {
+      if (lines[i].trim() === '') continue;
+      if (KANJI_RE.test(lines[i])) return true;
+      break;
+    }
+    return false;
+  };
+
+  const kept = lines.filter((line, index) => {
+    if (line.trim() === '') return true;
+    if (!HIRAGANA_ONLY_RE.test(line)) return true;
+    return !hasKanjiNeighbor(index);
+  });
+
+  const out: string[] = [];
+  for (const line of kept) {
+    if (line.trim() === '' && (out.length === 0 || out[out.length - 1].trim() === '')) continue;
+    out.push(line);
+  }
+  return out.join('\n').trim();
+}
+
 /** 読み取った文章に、設定に応じた整形をかける。読み取り直さずに何度でも適用できる。 */
 export function formatCaption(
   rawText: string,
-  opts: { dropEnglishText: boolean; joinLinesAtSentence: boolean },
+  opts: { dropFurigana: boolean; dropEnglishText: boolean; joinLinesAtSentence: boolean },
 ): string {
   let text = rawText;
+  // 行をつなぐ前に落とす。つないだ後では本文に取り込まれてしまう。
+  if (opts.dropFurigana) text = dropFuriganaLines(text);
   if (opts.dropEnglishText) text = dropEnglishLines(text);
   if (opts.joinLinesAtSentence) text = joinBySentence(text);
   return text;

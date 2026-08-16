@@ -73,7 +73,11 @@ export default function App() {
                   ...p,
                   status: 'done',
                   rawText: result.text,
-                  text: formatCaption(result.text, optionsRef.current),
+                  rawTextNoRuby: result.textWithoutRuby,
+                  text: formatCaption(
+                    optionsRef.current.dropFurigana ? result.textWithoutRuby : result.text,
+                    optionsRef.current,
+                  ),
                   confidence: result.confidence,
                   edited: false,
                 }
@@ -129,6 +133,7 @@ export default function App() {
           status: 'idle',
           text: '',
           rawText: '',
+          rawTextNoRuby: '',
           confidence: 0,
           edited: false,
         });
@@ -202,14 +207,15 @@ export default function App() {
           ? p
           : {
               ...p,
-              text: formatCaption(p.rawText, {
+              text: formatCaption(options.dropFurigana ? p.rawTextNoRuby : p.rawText, {
+                dropFurigana: options.dropFurigana,
                 dropEnglishText: options.dropEnglishText,
                 joinLinesAtSentence: options.joinLinesAtSentence,
               }),
             },
       ),
     );
-  }, [options.dropEnglishText, options.joinLinesAtSentence]);
+  }, [options.dropFurigana, options.dropEnglishText, options.joinLinesAtSentence]);
 
   const sections = useMemo(() => buildSections(photos), [photos]);
 

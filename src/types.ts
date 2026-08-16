@@ -18,8 +18,10 @@ export interface Photo {
   status: PhotoStatus;
   /** 表示・出力に使う本文。rawTextに設定を適用したもの。 */
   text: string;
-  /** 読み取った直後の文章。設定を変えたときに組み直す元になる。 */
+  /** 読み取った直後の文章（ルビを含む）。設定を変えたときに組み直す元になる。 */
   rawText: string;
+  /** 文字の大きさからルビを落とした文章。 */
+  rawTextNoRuby: string;
   /** Visionの信頼度 0-100 */
   confidence: number;
   /** 本文を手で直した／手入力したか */
@@ -46,6 +48,8 @@ export interface BuildOptions {
   imageDir: string;
   /** 「。」などの文末まで改行せずにまとめるか */
   joinLinesAtSentence: boolean;
+  /** 漢字に振られたふりがなの行を落とすか */
+  dropFurigana: boolean;
   /** 日本語と併記された英文を落とすか */
   dropEnglishText: boolean;
   /** 読み取りの補足情報と写真一覧を書き出すか */
@@ -59,6 +63,7 @@ export const defaultBuildOptions: BuildOptions = {
   imageMode: 'files',
   imageDir: 'images',
   joinLinesAtSentence: true,
+  dropFurigana: true,
   dropEnglishText: true,
   includeOcrNotes: true,
   includePhotos: false,

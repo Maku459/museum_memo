@@ -78,6 +78,20 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
         <label className="check standalone">
           <input
             type="checkbox"
+            checked={options.dropFurigana}
+            onChange={(e) => onChange({ dropFurigana: e.target.checked })}
+          />
+          ふりがな（ルビ）を取り込まない
+          <span className="hint">
+            ルビは本文より小さく組まれるため、文字の大きさで見分けて落とします
+            （本文の7割未満で、かなだけの語）。念のため、前後に漢字がある
+            「ひらがなだけの行」も落とします。
+          </span>
+        </label>
+
+        <label className="check standalone">
+          <input
+            type="checkbox"
             checked={options.dropEnglishText}
             onChange={(e) => onChange({ dropEnglishText: e.target.checked })}
           />
