@@ -1,12 +1,6 @@
 import type { BuildOptions, Photo, Section } from '../types';
 import { toDataUrl } from './image';
-import {
-  escapeMarkdownBlock,
-  escapeMarkdownInline,
-  formatDate,
-  formatDateTime,
-  formatTime,
-} from './text';
+import { escapeMarkdownBlock, escapeMarkdownInline, formatDate } from './text';
 
 /** data URLの変換は重いので、写真ごとに一度だけ作って作り直しをまたいで使い回す。 */
 const dataUrlCache = new Map<string, string>();
@@ -67,12 +61,7 @@ export async function buildMarkdown(
       formatDate(first) === formatDate(last)
         ? formatDate(first)
         : `${formatDate(first)} 〜 ${formatDate(last)}`;
-    blocks.push(
-      [
-        `- 訪問日: ${day}（${formatTime(first)}〜${formatTime(last)}）`,
-        `- 解説パネル: ${photos.length}枚`,
-      ].join('\n'),
-    );
+    blocks.push([`- 訪問日: ${day}`, `- 解説パネル: ${photos.length}枚`].join('\n'));
   }
 
   if (opts.includeOcrNotes) {
@@ -87,10 +76,6 @@ export async function buildMarkdown(
     // 解説文の先頭行をそのまま見出しにする。引き上げられなければ通し番号で代用する。
     const heading = section.title || `解説 ${index + 1}`;
     blocks.push(`## ${escapeMarkdownInline(heading)}`);
-
-    if (opts.includeTimestamps) {
-      blocks.push(`*${formatDateTime(section.photo.takenAt)}*`);
-    }
 
     if (opts.includePhotos) {
       const lines = [`![${escapeMarkdownInline(heading)}](${srcOf(section.photo)})`];
@@ -112,11 +97,8 @@ export async function buildMarkdown(
   if (opts.includeOcrNotes && sorted.length > 0) {
     blocks.push('---');
     blocks.push('## 付録: 写真一覧');
-    const rows = sorted.map((photo) => {
-      const time = `${formatDateTime(photo.takenAt)}${photo.takenAtFromExif ? '' : '（推定）'}`;
-      return `| ${photo.exportName} | ${time} | ${photo.text.length}字 |`;
-    });
-    blocks.push(['| ファイル | 撮影日時 | 文字数 |', '| --- | --- | --- |', ...rows].join('\n'));
+    const rows = sorted.map((photo) => `| ${photo.exportName} | ${photo.text.length}字 |`);
+    blocks.push(['| ファイル | 文字数 |', '| --- | --- |', ...rows].join('\n'));
   }
 
   return `${blocks.join('\n\n')}\n`;

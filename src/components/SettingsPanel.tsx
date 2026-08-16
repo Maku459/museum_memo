@@ -106,14 +106,6 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
           <label className="check">
             <input
               type="checkbox"
-              checked={options.includeTimestamps}
-              onChange={(e) => onChange({ includeTimestamps: e.target.checked })}
-            />
-            撮影時刻
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
               checked={options.includeOcrNotes}
               onChange={(e) => onChange({ includeOcrNotes: e.target.checked })}
             />

@@ -48,8 +48,6 @@ export interface BuildOptions {
   joinLinesAtSentence: boolean;
   /** 日本語と併記された英文を落とすか */
   dropEnglishText: boolean;
-  /** 撮影時刻を各項目に書き出すか */
-  includeTimestamps: boolean;
   /** 読み取りの補足情報と写真一覧を書き出すか */
   includeOcrNotes: boolean;
   /** パネルの写真もMarkdownに載せるか */
@@ -62,7 +60,6 @@ export const defaultBuildOptions: BuildOptions = {
   imageDir: 'images',
   joinLinesAtSentence: true,
   dropEnglishText: true,
-  includeTimestamps: true,
   includeOcrNotes: true,
   includePhotos: false,
 };
