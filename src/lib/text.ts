@@ -1,7 +1,11 @@
 /** OCR結果の後処理と、日本語まじりテキストの小物ユーティリティ。 */
 
-const CJK = '\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uff00-\\uffef';
-const CJK_SPACE_RE = new RegExp(`([${CJK}])[ \\t]+(?=[${CJK}])`, 'g');
+const CJK = '\\u3000-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uff00-\\uffef';
+/**
+ * 日本語のあいだの空白を詰める。英数字どうしの空白だけ残せばよいので、
+ * 「どちらかがラテン文字・数字でなければ詰める」と決める（「である。 演者」「) を」）。
+ */
+const CJK_SPACE_RE = /([^A-Za-z0-9])[ \t]+(?=[^A-Za-z0-9])|([A-Za-z0-9])[ \t]+(?=[\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef])/g;
 const MEANINGFUL_RE = new RegExp(`[${CJK}0-9A-Za-z]`, 'g');
 
 /**
@@ -18,7 +22,7 @@ export function cleanOcrText(raw: string): string {
       let prev: string;
       do {
         prev = s;
-        s = s.replace(CJK_SPACE_RE, '$1');
+        s = s.replace(CJK_SPACE_RE, '$1$2');
       } while (s !== prev);
       return s;
     });

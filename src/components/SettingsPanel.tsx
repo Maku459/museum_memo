@@ -94,12 +94,12 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
               <input
                 type="range"
                 min={0.3}
-                max={0.9}
+                max={0.95}
                 step={0.05}
                 value={options.rubyRatio}
                 onChange={(e) => onChange({ rubyRatio: Number(e.target.value) })}
               />
-              <output>本文の{Math.round(options.rubyRatio * 100)}%未満</output>
+              <output>いちばん小さい本文の{Math.round(options.rubyRatio * 100)}%未満</output>
             </span>
             <span className="hint">
               ルビが残るなら上げ、本文まで消えるなら下げてください。

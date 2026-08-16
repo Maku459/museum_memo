@@ -88,17 +88,36 @@ interface VisionResponse {
 
 // ---- ルビの判定 ----
 
-/** ルビとみなす大きさの既定値。本文の文字の何割未満なら落とすか。 */
-export const DEFAULT_RUBY_RATIO = 0.6;
+/** ルビとみなす大きさの既定値。いちばん小さい本文の何割未満なら落とすか。 */
+export const DEFAULT_RUBY_RATIO = 0.7;
+
+/**
+ * 「いちばん小さい本文」を採るときの位置。最小値そのものだと、
+ * かすれや汚れを1文字と誤認したときに基準が壊れるので、少し内側から採る。
+ */
+const SMALLEST_TEXT_PERCENTILE = 0.1;
 
 /** ルビはかなで振られる。漢字・英数字を含む語は、小さくてもルビとみなさない。 */
 const KANA_ONLY_RE = /^[ぁ-ゖァ-ヺーゝゞヽヾ・･、。\s]+$/;
+/** 大きさの基準に使う文字。ほぼ正方形に組まれるので比べやすい。 */
+const KANJI_RE = /[㐀-䶿一-鿿]/;
+/** 英文とみなすのに必要なアルファベットの数。単位や記号だけの行を巻き込まないための下限。 */
+const MIN_LATIN_LETTERS = 8;
+/** 日本語がまじる行は英文とみなさない。 */
+const JAPANESE_RE = /[぀-ヿ㐀-䶿一-鿿]/;
+
+function isEnglishLine(line: string): boolean {
+  if (JAPANESE_RE.test(line)) return false;
+  return (line.match(/[A-Za-z]/g) ?? []).length >= MIN_LATIN_LETTERS;
+}
 
 export interface ExtractOptions {
   /** ルビを落とすか */
   dropRuby: boolean;
-  /** 本文の文字の何割未満をルビとみなすか（0-1） */
+  /** いちばん小さい本文の何割未満をルビとみなすか（0-1） */
   rubyRatio: number;
+  /** 英文だけの行を落とすか */
+  dropEnglish: boolean;
 }
 
 /**
@@ -121,6 +140,13 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = Math.round((sorted.length - 1) * p);
+  return sorted[Math.min(sorted.length - 1, Math.max(0, index))];
+}
+
 function symbolsOf(page: VisionPage): VisionSymbol[] {
   return (page.blocks ?? []).flatMap((b) =>
     (b.paragraphs ?? []).flatMap((p) => (p.words ?? []).flatMap((w) => w.symbols ?? [])),
@@ -141,27 +167,29 @@ function wordText(word: VisionWord): string {
 }
 
 /**
- * ページ内の本文の文字の大きさ。
+ * ページ内で**いちばん小さい本文**の文字の大きさ。ルビはこれよりさらに小さい。
  *
- * **かな以外の文字（漢字・英数字）だけ**で中央値を採るのが要点。
- * ルビは必ずかなで振られるので、かなを除けば本文の大きさだけが残る。
+ * 漢字だけを見るのが要点。
+ * - ルビは必ずかなで振られるので、漢字はすべて本文（見出し・奥付を含む）。
+ * - ラテン文字は字ごとに縦横比が違い（`i` と `m`）、短辺が字幅になるため基準に使えない。
+ *   漢字はほぼ正方形なので比べやすい。
  *
- * 全文字の中央値では駄目だった。ルビは元の漢字より字数が多くなりがち
- * （「火焔型」に「かえんがた」）で、ルビの多いパネルでは中央値がルビ側に寄り、
- * 基準が下がってルビを落とせなくなる。
+ * 中央値ではなく下側から採る。パネルには見出し・本文・奥付と大きさの違う文が並び、
+ * 小さめの文（奥付など）が多いと中央値が下がって、ルビとの差が無くなってしまう。
+ * 「いちばん小さい本文より、さらに小さいか」で見れば、どの大きさの文とも取り違えない。
  */
-function bodyThicknessOf(page: VisionPage): number {
+function smallestTextThickness(page: VisionPage): number {
   const symbols = symbolsOf(page).filter((s) => (s.text ?? '').trim() !== '');
   const thickness = (s: VisionSymbol) => boxThickness(s.boundingBox);
 
-  const nonKana = symbols
-    .filter((s) => !KANA_ONLY_RE.test(s.text ?? ''))
+  const kanji = symbols
+    .filter((s) => KANJI_RE.test(s.text ?? ''))
     .map(thickness)
     .filter((v) => v > 0);
-  if (nonKana.length > 0) return median(nonKana);
+  if (kanji.length > 0) return percentile(kanji, SMALLEST_TEXT_PERCENTILE);
 
-  // かなしか無いパネルでは基準を作れないので、全文字から採る
-  return median(symbols.map(thickness).filter((v) => v > 0));
+  // 漢字が無いパネルでは基準を作れないので、全文字から採る
+  return percentile(symbols.map(thickness).filter((v) => v > 0), SMALLEST_TEXT_PERCENTILE);
 }
 
 /**
@@ -179,7 +207,7 @@ export function extractText(
   const paragraphs: string[] = [];
 
   for (const page of annotation?.pages ?? []) {
-    const rubyLimit = bodyThicknessOf(page) * opts.rubyRatio;
+    const rubyLimit = smallestTextThickness(page) * opts.rubyRatio;
 
     const isRuby = (word: VisionWord): boolean => {
       if (!opts.dropRuby || rubyLimit <= 0) return false;
@@ -219,7 +247,9 @@ export function extractText(
           }
         }
         if (line) lines.push(line);
-        const joined = joinWrappedLines(lines);
+        // 和文と英文が同じ段落に入っていることがあるので、つなぐ前に行ごとに捨てる
+        const kept = opts.dropEnglish ? lines.filter((l) => !isEnglishLine(l)) : lines;
+        const joined = joinWrappedLines(kept);
         if (joined) paragraphs.push(joined);
       }
     }
