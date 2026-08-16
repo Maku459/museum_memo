@@ -49,23 +49,6 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
         </label>
 
         <label>
-          展示物を解説文に紐づける時間差
-          <span className="range-row">
-            <input
-              type="range"
-              min={1}
-              max={30}
-              value={options.groupGapMinutes}
-              onChange={(e) => onChange({ groupGapMinutes: Number(e.target.value) })}
-            />
-            <output>{options.groupGapMinutes}分</output>
-          </span>
-          <span className="hint">
-            解説文の写真からこの時間内に撮った展示物写真を、同じ項目にまとめます。
-          </span>
-        </label>
-
-        <label>
           画像の埋め込み方
           <select
             value={options.imageMode}
@@ -95,6 +78,19 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
         <label className="check standalone">
           <input
             type="checkbox"
+            checked={options.dropEnglishText}
+            onChange={(e) => onChange({ dropEnglishText: e.target.checked })}
+          />
+          英訳を取り込まない
+          <span className="hint">
+            日本語と英語が併記されたパネルで、英文だけの行を落とします。
+            日本語がまじる行や、「H 25.0cm」のような短い表記は残します。
+          </span>
+        </label>
+
+        <label className="check standalone">
+          <input
+            type="checkbox"
             checked={options.joinLinesAtSentence}
             onChange={(e) => onChange({ joinLinesAtSentence: e.target.checked })}
           />
@@ -110,26 +106,18 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
           <label className="check">
             <input
               type="checkbox"
-              checked={options.includeTimestamps}
-              onChange={(e) => onChange({ includeTimestamps: e.target.checked })}
-            />
-            撮影時刻
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
               checked={options.includeOcrNotes}
               onChange={(e) => onChange({ includeOcrNotes: e.target.checked })}
             />
-            読み取りの補足情報と写真一覧
+            読み取りの注記と写真一覧
           </label>
           <label className="check">
             <input
               type="checkbox"
-              checked={options.includeCaptionPhotos}
-              onChange={(e) => onChange({ includeCaptionPhotos: e.target.checked })}
+              checked={options.includePhotos}
+              onChange={(e) => onChange({ includePhotos: e.target.checked })}
             />
-            解説パネルの写真も載せる
+            パネルの写真も載せる
           </label>
         </fieldset>
       </div>

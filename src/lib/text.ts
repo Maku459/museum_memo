@@ -75,6 +75,43 @@ export function joinBySentence(text: string): string {
   return out.join('\n');
 }
 
+const JAPANESE_RE = /[぀-ヿ㐀-䶿一-鿿]/;
+/** 英文とみなすのに必要なアルファベットの数。単位や記号だけの行を巻き込まないための下限。 */
+const MIN_LATIN_LETTERS = 8;
+
+/**
+ * 日本語と英語が併記されたパネルから、英文だけの行を落とす。
+ *
+ * 日本語がまじる行は残す（「1953年 Jomon」のような行を消さないため）。
+ * 「H 25.0cm」のような短い表記も、アルファベットが少ないので残る。
+ */
+export function dropEnglishLines(text: string): string {
+  const kept = text.split('\n').filter((line) => {
+    if (JAPANESE_RE.test(line)) return true;
+    const latin = (line.match(/[A-Za-z]/g) ?? []).length;
+    return latin < MIN_LATIN_LETTERS;
+  });
+
+  // 落とした跡に空行が並ばないようにする
+  const out: string[] = [];
+  for (const line of kept) {
+    if (line.trim() === '' && (out.length === 0 || out[out.length - 1].trim() === '')) continue;
+    out.push(line);
+  }
+  return out.join('\n').trim();
+}
+
+/** 読み取った文章に、設定に応じた整形をかける。読み取り直さずに何度でも適用できる。 */
+export function formatCaption(
+  rawText: string,
+  opts: { dropEnglishText: boolean; joinLinesAtSentence: boolean },
+): string {
+  let text = rawText;
+  if (opts.dropEnglishText) text = dropEnglishLines(text);
+  if (opts.joinLinesAtSentence) text = joinBySentence(text);
+  return text;
+}
+
 /** 空白や記号を除いた「意味のある文字」の数。 */
 export function meaningfulCharCount(text: string): number {
   return (text.match(MEANINGFUL_RE) ?? []).length;
@@ -87,13 +124,27 @@ export function meaningfulCharCount(text: string): number {
 const LEADING_NOISE_RE =
   /^[\s|｜│┃[\]{}()<>"'`*_#=+~^\\/—–\-.,:;、。・･「」『』【】〔〕［］（）〈〉…]+/;
 
-export function deriveTitle(text: string, maxLen = 40): string {
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.replace(LEADING_NOISE_RE, '').trim();
-    if (meaningfulCharCount(line) < 2) continue;
-    return line.length > maxLen ? `${line.slice(0, maxLen)}…` : line;
+/** これより長い先頭行は、パネルの名前ではなく本文とみなして見出しにしない。 */
+const MAX_HEADING_CHARS = 30;
+
+/**
+ * 解説文の先頭行を見出しに引き上げ、本文からは取り除く（重複させない）。
+ *
+ * 先頭行が長い、または文として終わっている（「。」で閉じている）ときは、
+ * 名前ではなく本文の書き出しと判断して見出しにはしない。
+ */
+export function splitHeading(text: string): { heading: string; body: string } {
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length && meaningfulCharCount(lines[i]) < 2) i += 1;
+  if (i >= lines.length) return { heading: '', body: text.trim() };
+
+  const heading = lines[i].replace(LEADING_NOISE_RE, '').trim();
+  if (heading.length > MAX_HEADING_CHARS || SENTENCE_END_RE.test(heading)) {
+    return { heading: '', body: text.trim() };
   }
-  return '';
+
+  return { heading, body: lines.slice(i + 1).join('\n').trim() };
 }
 
 /** Markdownの見出しや強調として解釈されない形に整える。 */
