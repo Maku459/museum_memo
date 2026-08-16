@@ -225,6 +225,22 @@ button.danger:hover {
   font-weight: 400;
 }
 
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.range-row input {
+  flex: 1;
+}
+
+.range-row output {
+  min-width: 8em;
+  font-weight: 400;
+  color: var(--muted);
+}
+
 input[type='text'],
 input[type='datetime-local'],
 select,

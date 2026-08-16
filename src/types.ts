@@ -1,3 +1,5 @@
+import { DEFAULT_RUBY_RATIO, type VisionAnnotation } from './lib/vision';
+
 /** idle = まだ読み取っていない。 */
 export type PhotoStatus = 'idle' | 'reading' | 'done' | 'error';
 
@@ -18,10 +20,10 @@ export interface Photo {
   status: PhotoStatus;
   /** 表示・出力に使う本文。rawTextに設定を適用したもの。 */
   text: string;
-  /** 読み取った直後の文章（ルビを含む）。設定を変えたときに組み直す元になる。 */
+  /** Visionの読み取り結果。設定を変えたときはここから組み直す（読み取り直さない）。 */
+  annotation: VisionAnnotation | null;
+  /** 構造が取れないとき用の素の文章。手入力もここに入る。 */
   rawText: string;
-  /** 文字の大きさからルビを落とした文章。 */
-  rawTextNoRuby: string;
   /** Visionの信頼度 0-100 */
   confidence: number;
   /** 本文を手で直した／手入力したか */
@@ -48,8 +50,10 @@ export interface BuildOptions {
   imageDir: string;
   /** 「。」などの文末まで改行せずにまとめるか */
   joinLinesAtSentence: boolean;
-  /** 漢字に振られたふりがなの行を落とすか */
+  /** ルビを落とすか */
   dropFurigana: boolean;
+  /** 本文の文字の何割未満をルビとみなすか（0-1） */
+  rubyRatio: number;
   /** 日本語と併記された英文を落とすか */
   dropEnglishText: boolean;
   /** 読み取りの補足情報と写真一覧を書き出すか */
@@ -64,6 +68,7 @@ export const defaultBuildOptions: BuildOptions = {
   imageDir: 'images',
   joinLinesAtSentence: true,
   dropFurigana: true,
+  rubyRatio: DEFAULT_RUBY_RATIO,
   dropEnglishText: true,
   includeOcrNotes: true,
   includePhotos: false,

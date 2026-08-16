@@ -10,15 +10,6 @@ import { cleanOcrText } from './text';
 const ENDPOINT = 'https://vision.googleapis.com/v1/images:annotate';
 const STORAGE_KEY = 'museum-memo.vision-api-key';
 
-export interface OcrResult {
-  /** 読み取った全文（ルビを含む） */
-  text: string;
-  /** 本文より小さく組まれたかな（ルビ）を落とした全文 */
-  textWithoutRuby: string;
-  /** 0-100。Visionのページ単位の信頼度をならしたもの。 */
-  confidence: number;
-}
-
 export function loadApiKey(): string {
   try {
     return localStorage.getItem(STORAGE_KEY) ?? '';
@@ -53,7 +44,13 @@ async function toBase64Jpeg(file: File, maxEdge = 1800, quality = 0.85): Promise
   return canvas.toDataURL('image/jpeg', quality).split(',')[1] ?? '';
 }
 
+// ---- Visionの応答（必要なところだけ） ----
+
 type BreakType = 'SPACE' | 'SURE_SPACE' | 'EOL_SURE_SPACE' | 'LINE_BREAK' | 'HYPHEN' | 'UNKNOWN';
+
+interface BoundingPoly {
+  vertices?: { x?: number; y?: number }[];
+}
 
 interface VisionSymbol {
   text?: string;
@@ -74,16 +71,12 @@ interface VisionBlock {
   paragraphs?: VisionParagraph[];
 }
 
-interface BoundingPoly {
-  vertices?: { x?: number; y?: number }[];
-}
-
 interface VisionPage {
   confidence?: number;
   blocks?: VisionBlock[];
 }
 
-interface VisionAnnotation {
+export interface VisionAnnotation {
   text?: string;
   pages?: VisionPage[];
 }
@@ -93,10 +86,20 @@ interface VisionResponse {
   error?: { code?: number; message?: string; status?: string };
 }
 
-/** ルビは本文より小さく組まれる。本文の何割より細ければルビとみなすか。 */
-const RUBY_THICKNESS_RATIO = 0.6;
-/** ルビはかなで振られる。漢字や英数字を含む語は、小さくてもルビとみなさない。 */
-const KANA_ONLY_RE = /^[ぁ-ゖァ-ヺーゝゞヽヾ\s]+$/;
+// ---- ルビの判定 ----
+
+/** ルビとみなす大きさの既定値。本文の文字の何割未満なら落とすか。 */
+export const DEFAULT_RUBY_RATIO = 0.6;
+
+/** ルビはかなで振られる。漢字・英数字を含む語は、小さくてもルビとみなさない。 */
+const KANA_ONLY_RE = /^[ぁ-ゖァ-ヺーゝゞヽヾ・･、。\s]+$/;
+
+export interface ExtractOptions {
+  /** ルビを落とすか */
+  dropRuby: boolean;
+  /** 本文の文字の何割未満をルビとみなすか（0-1） */
+  rubyRatio: number;
+}
 
 /**
  * 文字の「太さ」。縦書きは幅、横書きは高さが文字の大きさを表すので、短い方の辺を採る。
@@ -108,9 +111,7 @@ function boxThickness(box: BoundingPoly | undefined): number {
   if (vertices.length === 0) return 0;
   const xs = vertices.map((v) => v.x ?? 0);
   const ys = vertices.map((v) => v.y ?? 0);
-  const width = Math.max(...xs) - Math.min(...xs);
-  const height = Math.max(...ys) - Math.min(...ys);
-  return Math.min(width, height);
+  return Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
 }
 
 function median(values: number[]): number {
@@ -120,15 +121,19 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function wordsOf(page: VisionPage): VisionWord[] {
-  return (page.blocks ?? []).flatMap((b) => (b.paragraphs ?? []).flatMap((p) => p.words ?? []));
+function symbolsOf(page: VisionPage): VisionSymbol[] {
+  return (page.blocks ?? []).flatMap((b) =>
+    (b.paragraphs ?? []).flatMap((p) => (p.words ?? []).flatMap((w) => w.symbols ?? [])),
+  );
 }
 
-/** 語の太さ。boundingBoxが無ければ文字の太さから拾う。 */
+/** 語の太さ。文字ごとの太さの中央値を採り、無ければ語の枠から拾う。 */
 function wordThickness(word: VisionWord): number {
-  const t = boxThickness(word.boundingBox);
-  if (t > 0) return t;
-  return median((word.symbols ?? []).map((s) => boxThickness(s.boundingBox)).filter((v) => v > 0));
+  const perSymbol = (word.symbols ?? [])
+    .map((s) => boxThickness(s.boundingBox))
+    .filter((v) => v > 0);
+  if (perSymbol.length > 0) return median(perSymbol);
+  return boxThickness(word.boundingBox);
 }
 
 function wordText(word: VisionWord): string {
@@ -136,29 +141,50 @@ function wordText(word: VisionWord): string {
 }
 
 /**
+ * ページ内の本文の文字の大きさ。
+ *
+ * **かな以外の文字（漢字・英数字）だけ**で中央値を採るのが要点。
+ * ルビは必ずかなで振られるので、かなを除けば本文の大きさだけが残る。
+ *
+ * 全文字の中央値では駄目だった。ルビは元の漢字より字数が多くなりがち
+ * （「火焔型」に「かえんがた」）で、ルビの多いパネルでは中央値がルビ側に寄り、
+ * 基準が下がってルビを落とせなくなる。
+ */
+function bodyThicknessOf(page: VisionPage): number {
+  const symbols = symbolsOf(page).filter((s) => (s.text ?? '').trim() !== '');
+  const thickness = (s: VisionSymbol) => boxThickness(s.boundingBox);
+
+  const nonKana = symbols
+    .filter((s) => !KANA_ONLY_RE.test(s.text ?? ''))
+    .map(thickness)
+    .filter((v) => v > 0);
+  if (nonKana.length > 0) return median(nonKana);
+
+  // かなしか無いパネルでは基準を作れないので、全文字から採る
+  return median(symbols.map(thickness).filter((v) => v > 0));
+}
+
+/**
  * fullTextAnnotation.text はパネルの見た目の1行ごとに改行が入っている。
  * Visionは行末（EOL_SURE_SPACE）と段落末（LINE_BREAK）を区別しているので、
  * 構造をたどり直して「段落＝1行」の形に組み直す。
  *
- * `skipRuby` を立てると、本文より小さく組まれたかなだけの語（ルビ）を落とす。
+ * あわせて、本文より小さく組まれたかなだけの語（ルビ）を落とす。
  * 語ごと落としても行や段落の区切りは残すので、文のつながりは崩れない。
  */
-function textFromAnnotation(annotation: VisionAnnotation | undefined, skipRuby: boolean): string {
+export function extractText(
+  annotation: VisionAnnotation | null | undefined,
+  opts: ExtractOptions,
+): string {
   const paragraphs: string[] = [];
 
   for (const page of annotation?.pages ?? []) {
-    // ページごとに本文の文字の太さを見積もる（見出しやルビに引っぱられにくい中央値）
-    const thicknesses = wordsOf(page)
-      .map(wordThickness)
-      .filter((t) => t > 0);
-    const bodyThickness = median(thicknesses);
-    const rubyLimit = bodyThickness * RUBY_THICKNESS_RATIO;
+    const rubyLimit = bodyThicknessOf(page) * opts.rubyRatio;
 
     const isRuby = (word: VisionWord): boolean => {
-      if (!skipRuby || rubyLimit <= 0) return false;
+      if (!opts.dropRuby || rubyLimit <= 0) return false;
       const thickness = wordThickness(word);
       if (thickness <= 0 || thickness >= rubyLimit) return false;
-      // かなだけの語に限る。小さく組まれた注記（漢字や数字を含む）は残す。
       const text = wordText(word);
       return text.trim() !== '' && KANA_ONLY_RE.test(text);
     };
@@ -200,7 +226,7 @@ function textFromAnnotation(annotation: VisionAnnotation | undefined, skipRuby: 
   }
 
   // 構造が取れないときは素のテキストで妥協する
-  return paragraphs.length > 0 ? paragraphs.join('\n') : (annotation?.text ?? '');
+  return cleanOcrText(paragraphs.length > 0 ? paragraphs.join('\n') : (annotation?.text ?? ''));
 }
 
 /** 折り返しでできた行をつなぐ。英単語どうしのときだけ空白を入れる。 */
@@ -216,6 +242,8 @@ function joinWrappedLines(lines: string[]): string {
       return acc + (needsSpace ? ' ' : '') + line;
     }, '');
 }
+
+// ---- 呼び出し ----
 
 /** 返ってきたエラーを、利用者が次に何をすればいいか分かる日本語にする。 */
 function describeError(status: number, message: string): string {
@@ -235,6 +263,13 @@ function describeError(status: number, message: string): string {
     return '呼び出し回数の上限に達しました。しばらく待つか、Google Cloudの割り当てを確認してください。';
   }
   return message || `Vision APIの呼び出しに失敗しました（HTTP ${status}）。`;
+}
+
+export interface OcrResult {
+  /** 読み取った構造。設定を変えたらこれから組み直すので、読み取り直さずに済む。 */
+  annotation: VisionAnnotation | null;
+  /** 0-100。Visionのページ単位の信頼度をならしたもの。 */
+  confidence: number;
 }
 
 /** 解説パネル1枚を読み取る。 */
@@ -276,17 +311,14 @@ export async function recognize(
     throw new Error(describeError(first.error.code ?? res.status, first.error.message ?? ''));
   }
 
-  const annotation = first?.fullTextAnnotation;
-  const pages = annotation?.pages ?? [];
-  const confidences = pages.map((p) => p.confidence).filter((c): c is number => typeof c === 'number');
+  const annotation = first?.fullTextAnnotation ?? null;
+  const confidences = (annotation?.pages ?? [])
+    .map((p) => p.confidence)
+    .filter((c): c is number => typeof c === 'number');
   const confidence =
     confidences.length > 0
       ? Math.round((confidences.reduce((a, b) => a + b, 0) / confidences.length) * 100)
       : 0;
 
-  return {
-    text: cleanOcrText(textFromAnnotation(annotation, false)),
-    textWithoutRuby: cleanOcrText(textFromAnnotation(annotation, true)),
-    confidence,
-  };
+  return { annotation, confidence };
 }
