@@ -41,7 +41,11 @@ function byTime(a: Photo, b: Photo): number {
  */
 function deriveText(photo: Pick<Photo, 'annotation' | 'rawText'>, opts: BuildOptions): string {
   const base = photo.annotation
-    ? extractText(photo.annotation, { dropRuby: opts.dropFurigana, rubyRatio: opts.rubyRatio })
+    ? extractText(photo.annotation, {
+        dropRuby: opts.dropFurigana,
+        rubyRatio: opts.rubyRatio,
+        dropEnglish: opts.dropEnglishText,
+      })
     : photo.rawText;
   return formatCaption(base, opts);
 }
@@ -87,6 +91,7 @@ export default function App() {
                   rawText: extractText(result.annotation, {
                     dropRuby: false,
                     rubyRatio: optionsRef.current.rubyRatio,
+                    dropEnglish: false,
                   }),
                   text: deriveText(
                     { annotation: result.annotation, rawText: '' },
