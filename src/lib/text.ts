@@ -124,13 +124,27 @@ export function meaningfulCharCount(text: string): number {
 const LEADING_NOISE_RE =
   /^[\s|｜│┃[\]{}()<>"'`*_#=+~^\\/—–\-.,:;、。・･「」『』【】〔〕［］（）〈〉…]+/;
 
-export function deriveTitle(text: string, maxLen = 40): string {
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.replace(LEADING_NOISE_RE, '').trim();
-    if (meaningfulCharCount(line) < 2) continue;
-    return line.length > maxLen ? `${line.slice(0, maxLen)}…` : line;
+/** これより長い先頭行は、パネルの名前ではなく本文とみなして見出しにしない。 */
+const MAX_HEADING_CHARS = 30;
+
+/**
+ * 解説文の先頭行を見出しに引き上げ、本文からは取り除く（重複させない）。
+ *
+ * 先頭行が長い、または文として終わっている（「。」で閉じている）ときは、
+ * 名前ではなく本文の書き出しと判断して見出しにはしない。
+ */
+export function splitHeading(text: string): { heading: string; body: string } {
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length && meaningfulCharCount(lines[i]) < 2) i += 1;
+  if (i >= lines.length) return { heading: '', body: text.trim() };
+
+  const heading = lines[i].replace(LEADING_NOISE_RE, '').trim();
+  if (heading.length > MAX_HEADING_CHARS || SENTENCE_END_RE.test(heading)) {
+    return { heading: '', body: text.trim() };
   }
-  return '';
+
+  return { heading, body: lines.slice(i + 1).join('\n').trim() };
 }
 
 /** Markdownの見出しや強調として解釈されない形に整える。 */

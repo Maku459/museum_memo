@@ -30,8 +30,10 @@ export interface Photo {
 /** メモの1項目。パネル1枚がそのまま1項目になる。 */
 export interface Section {
   id: string;
-  /** 見出し（本文の1行目など）。 */
+  /** 見出しに使う先頭行。引き上げられなかった場合は空。 */
   title: string;
+  /** 見出しを取り除いた本文。 */
+  body: string;
   photo: Photo;
 }
 

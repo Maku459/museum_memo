@@ -84,22 +84,25 @@ export async function buildMarkdown(
   blocks.push('---');
 
   sections.forEach((section, index) => {
-    const number = index + 1;
-    const title = section.title || `解説 ${number}`;
-    blocks.push(`## ${number}. ${escapeMarkdownInline(title)}`);
+    // 解説文の先頭行をそのまま見出しにする。引き上げられなければ通し番号で代用する。
+    const heading = section.title || `解説 ${index + 1}`;
+    blocks.push(`## ${escapeMarkdownInline(heading)}`);
 
     if (opts.includeTimestamps) {
       blocks.push(`*${formatDateTime(section.photo.takenAt)}*`);
     }
 
     if (opts.includePhotos) {
-      const lines = [`![${escapeMarkdownInline(title)}](${srcOf(section.photo)})`];
+      const lines = [`![${escapeMarkdownInline(heading)}](${srcOf(section.photo)})`];
       if (opts.imageMode === 'files') lines.push(`*${section.photo.exportName}*`);
       blocks.push(lines.join('\n'));
     }
 
-    const body = section.photo.text.trim();
-    blocks.push(body ? escapeMarkdownBlock(body) : '*（このパネルからは文字を読み取れませんでした）*');
+    if (section.body) {
+      blocks.push(escapeMarkdownBlock(section.body));
+    } else if (!section.photo.text.trim()) {
+      blocks.push('*（このパネルからは文字を読み取れませんでした）*');
+    }
 
     if (opts.includeOcrNotes) {
       blocks.push(`*${sourceNote(section.photo)}*`);
