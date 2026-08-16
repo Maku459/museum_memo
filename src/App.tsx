@@ -3,7 +3,7 @@ import PhotoCard from './components/PhotoCard';
 import SettingsPanel from './components/SettingsPanel';
 import OutlinePanel from './components/OutlinePanel';
 import { readImageMeta } from './lib/image';
-import { loadApiKey, recognize, saveApiKey } from './lib/vision';
+import { extractText, loadApiKey, recognize, saveApiKey } from './lib/vision';
 import { buildSections } from './lib/group';
 import { buildMarkdown, forgetDataUrl } from './lib/markdown';
 import { copyToClipboard, downloadMarkdown, downloadZip } from './lib/download';
@@ -33,6 +33,17 @@ function uniqueExportName(fileName: string, taken: Set<string>): string {
 
 function byTime(a: Photo, b: Photo): number {
   return a.takenAt.getTime() - b.takenAt.getTime();
+}
+
+/**
+ * 読み取り結果から本文を作る。設定を変えたときはここを通し直すだけでよく、
+ * Vision APIを呼び直す必要はない。
+ */
+function deriveText(photo: Pick<Photo, 'annotation' | 'rawText'>, opts: BuildOptions): string {
+  const base = photo.annotation
+    ? extractText(photo.annotation, { dropRuby: opts.dropFurigana, rubyRatio: opts.rubyRatio })
+    : photo.rawText;
+  return formatCaption(base, opts);
 }
 
 export default function App() {
@@ -72,10 +83,13 @@ export default function App() {
               ? {
                   ...p,
                   status: 'done',
-                  rawText: result.text,
-                  rawTextNoRuby: result.textWithoutRuby,
-                  text: formatCaption(
-                    optionsRef.current.dropFurigana ? result.textWithoutRuby : result.text,
+                  annotation: result.annotation,
+                  rawText: extractText(result.annotation, {
+                    dropRuby: false,
+                    rubyRatio: optionsRef.current.rubyRatio,
+                  }),
+                  text: deriveText(
+                    { annotation: result.annotation, rawText: '' },
                     optionsRef.current,
                   ),
                   confidence: result.confidence,
@@ -133,7 +147,7 @@ export default function App() {
           status: 'idle',
           text: '',
           rawText: '',
-          rawTextNoRuby: '',
+          annotation: null,
           confidence: 0,
           edited: false,
         });
@@ -203,19 +217,17 @@ export default function App() {
   useEffect(() => {
     setPhotos((prev) =>
       prev.map((p) =>
-        p.edited || !p.rawText
+        p.edited || (!p.annotation && !p.rawText)
           ? p
-          : {
-              ...p,
-              text: formatCaption(options.dropFurigana ? p.rawTextNoRuby : p.rawText, {
-                dropFurigana: options.dropFurigana,
-                dropEnglishText: options.dropEnglishText,
-                joinLinesAtSentence: options.joinLinesAtSentence,
-              }),
-            },
+          : { ...p, text: deriveText(p, optionsRef.current) },
       ),
     );
-  }, [options.dropFurigana, options.dropEnglishText, options.joinLinesAtSentence]);
+  }, [
+    options.dropFurigana,
+    options.rubyRatio,
+    options.dropEnglishText,
+    options.joinLinesAtSentence,
+  ]);
 
   const sections = useMemo(() => buildSections(photos), [photos]);
 
