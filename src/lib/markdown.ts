@@ -30,15 +30,6 @@ export function forgetDataUrl(photoId: string): void {
   dataUrlCache.delete(photoId);
 }
 
-/** 本文が読み取り由来か手入力かを示す補足。信頼度は読み取ったときだけ意味がある。 */
-function sourceNote(photo: Photo): string {
-  if (photo.status !== 'done') return `手入力: ${photo.exportName}`;
-  const detail = photo.edited
-    ? `信頼度 ${photo.confidence}% / 手直しあり`
-    : `信頼度 ${photo.confidence}%`;
-  return `読み取り: ${photo.exportName}（${detail}）`;
-}
-
 /** 見学メモ本体を組み立てる。読み取った解説文は省略せず全文を入れる。 */
 export async function buildMarkdown(
   photos: Photo[],
@@ -87,10 +78,6 @@ export async function buildMarkdown(
       blocks.push(escapeMarkdownBlock(section.body));
     } else if (!section.photo.text.trim()) {
       blocks.push('*（このパネルからは文字を読み取れませんでした）*');
-    }
-
-    if (opts.includeOcrNotes) {
-      blocks.push(`*${sourceNote(section.photo)}*`);
     }
   });
 

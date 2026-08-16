@@ -109,7 +109,7 @@ export default function SettingsPanel({ options, onChange, apiKey, onChangeApiKe
               checked={options.includeOcrNotes}
               onChange={(e) => onChange({ includeOcrNotes: e.target.checked })}
             />
-            読み取りの補足情報と写真一覧
+            読み取りの注記と写真一覧
           </label>
           <label className="check">
             <input
