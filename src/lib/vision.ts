@@ -89,7 +89,7 @@ interface VisionResponse {
 // ---- ルビの判定 ----
 
 /** ルビとみなす大きさの既定値。いちばん小さい本文の何割未満なら落とすか。 */
-export const DEFAULT_RUBY_RATIO = 0.7;
+export const DEFAULT_RUBY_RATIO = 0.6;
 
 /**
  * 「いちばん小さい本文」を採るときの位置。最小値そのものだと、

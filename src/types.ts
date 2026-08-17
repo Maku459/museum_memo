@@ -50,8 +50,8 @@ export interface BuildOptions {
   imageDir: string;
   /** 「。」などの文末まで改行せずにまとめるか */
   joinLinesAtSentence: boolean;
-  /** ルビを落とすか */
-  dropFurigana: boolean;
+  /** パネルにルビ（ふりがな）が振られているか。falseならルビの判定自体を行わない。 */
+  hasRuby: boolean;
   /** 本文の文字の何割未満をルビとみなすか（0-1） */
   rubyRatio: number;
   /** 日本語と併記された英文を落とすか */
@@ -67,7 +67,7 @@ export const defaultBuildOptions: BuildOptions = {
   imageMode: 'files',
   imageDir: 'images',
   joinLinesAtSentence: true,
-  dropFurigana: true,
+  hasRuby: false,
   rubyRatio: DEFAULT_RUBY_RATIO,
   dropEnglishText: true,
   includeOcrNotes: true,

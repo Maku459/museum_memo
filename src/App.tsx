@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PhotoCard from './components/PhotoCard';
 import SettingsPanel from './components/SettingsPanel';
+import RubyChoice from './components/RubyChoice';
 import OutlinePanel from './components/OutlinePanel';
 import { readImageMeta } from './lib/image';
 import { extractText, loadApiKey, recognize, saveApiKey } from './lib/vision';
@@ -42,7 +43,7 @@ function byTime(a: Photo, b: Photo): number {
 function deriveText(photo: Pick<Photo, 'annotation' | 'rawText'>, opts: BuildOptions): string {
   const base = photo.annotation
     ? extractText(photo.annotation, {
-        dropRuby: opts.dropFurigana,
+        dropRuby: opts.hasRuby,
         rubyRatio: opts.rubyRatio,
         dropEnglish: opts.dropEnglishText,
       })
@@ -228,7 +229,7 @@ export default function App() {
       ),
     );
   }, [
-    options.dropFurigana,
+    options.hasRuby,
     options.rubyRatio,
     options.dropEnglishText,
     options.joinLinesAtSentence,
@@ -312,6 +313,9 @@ export default function App() {
       </label>
 
       {notice && <p className="error banner">{notice}</p>}
+
+      {/* 読み取る前に選んでもらう。ルビの無いパネルに判定をかけると本文を巻き添えにするため。 */}
+      <RubyChoice options={options} onChange={updateOptions} />
 
       {/* 写真を入れる前にAPIキーを設定できるよう、常に出しておく */}
       <SettingsPanel
